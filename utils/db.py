@@ -1,6 +1,7 @@
 import dataclasses
 import os
 from dataclasses import asdict
+from functools import lru_cache
 
 import requests
 
@@ -31,6 +32,7 @@ PlaylistResp_allowed_fields = {field.name for field in PlaylistConfigResp.__data
 MediaMappingResp_allowed_fields = {field.name for field in MediaMappingResp.__dataclass_fields__.values()}
 
 
+@lru_cache(maxsize=1)
 def load_playlist_configs():
     url = f"{config_db_url}/api/collections/playlist_config/records"
     response = requests.get(url)
@@ -76,8 +78,10 @@ class Settings:
     pf2jf_path_conv_search: str
     pf2jf_path_conv_replace: str
     jf_user_name: str
+    wait_time: str = "1m"
 
 
+@lru_cache(maxsize=1)
 def load_settings():
     url = f"{config_db_url}/api/collections/yt_sync_settings/records"
     response = requests.get(url)
