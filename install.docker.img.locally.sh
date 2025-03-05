@@ -5,7 +5,7 @@ REPO_URL="https://github.com/serg-bloim/yt2jf_playsync.git"
 REPO_NAME="yt2jf_playsync"
 # Clone the repository
 echo "Cloning repository..."
-git clone "$REPO_URL"
+git clone --depth=1 "$REPO_URL"
 # Check if the repo was cloned successfully
 if [ ! -d "$REPO_NAME" ]; then
     echo "Error: Failed to clone repository!"
