@@ -132,7 +132,7 @@ def update_pl_cfg_in_db():
                     playlists = get_jf_playlists()
                     jf_pl = next((pl for pl in playlists if pl['Name'] == pl_cfg.jf_pl_name), None)
                 if jf_pl is None:
-                    id = create_playlist(pl_cfg.ytm_pl_name, user.id, type="Audio")
+                    id = create_playlist(pl_cfg.jf_pl_name or pl_cfg.ytm_pl_name, user.id, type="Audio")
                     jf_pl = load_item_by_id(id, user.id)
                 if jf_pl:
                     pl_cfg.jf_pl_id = jf_pl['Id']
