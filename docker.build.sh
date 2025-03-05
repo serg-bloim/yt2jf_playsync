@@ -4,5 +4,5 @@ full_img=$img:$tag
 code_verison=$(git rev-parse HEAD)
 echo "[core]
 docker_version=$tag
-code_verison=$code_verison" > version.txt
+code_version=$code_verison" > version.txt
 docker build -t $full_img .
