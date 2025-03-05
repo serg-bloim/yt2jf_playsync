@@ -1,3 +1,4 @@
+import configparser
 import time
 from datetime import timedelta
 
@@ -17,8 +18,16 @@ def wait_period():
     time.sleep(wait_time)
 
 
+def read_version():
+    config = configparser.ConfigParser()
+    config.read('version.txt')
+    docker_v = config['core']['docker_version']
+    code_v = config['core']['code_version']
+    return f"{docker_v} / {code_v}"
+
+
 def main():
-    logger.info("Starting the sync")
+    logger.info(f"Starting the sync. Version: {read_version()}")
     update_pl_cfg_in_db()
     update_yt_ids_in_db()
     sync_all_playlists()

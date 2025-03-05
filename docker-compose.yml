@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  yt2jf_playsync:
+    image: yt2jf_playsync:0.1
+    container_name: yt2jf_playsync
+    restart: unless-stopped
+    environment:
+      - CONFIG_DB_URL=<YOUR PocketBase DB url>
