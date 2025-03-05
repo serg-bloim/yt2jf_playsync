@@ -3,6 +3,10 @@
 # Set repo URL and target directory
 REPO_URL="https://github.com/serg-bloim/yt2jf_playsync.git"
 REPO_NAME="yt2jf_playsync"
+
+echo Removing the existing git repo if any
+rm -rf "$REPO_NAME"
+
 # Clone the repository
 echo "Cloning repository..."
 git clone --depth=1 "$REPO_URL"
