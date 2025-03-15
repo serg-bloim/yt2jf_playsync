@@ -8,7 +8,7 @@ def chunked(iterable, size):
 
 def get_nested_value(d, *keys):
     for key in keys:
-        if isinstance(d, dict) and key in d:
+        if hasattr(d, '__getitem__') and hasattr(d, '__contains__') and key in d:
             d = d[key]
         else:
             return None
