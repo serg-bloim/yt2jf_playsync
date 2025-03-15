@@ -1,5 +1,5 @@
 img=yt2jf_playsync
-tag=0.1
+tag=0.2
 full_img=$img:$tag
 code_verison=$(git rev-parse HEAD)
 echo "[core]
