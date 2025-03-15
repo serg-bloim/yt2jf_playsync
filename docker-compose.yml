@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   yt2jf_playsync:
-    image: yt2jf_playsync:0.2.1
+    image: yt2jf_playsync:0.3
     container_name: yt2jf_playsync
     restart: unless-stopped
     environment:
