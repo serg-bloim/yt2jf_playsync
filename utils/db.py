@@ -101,12 +101,17 @@ def set_setting_if_absent(key, val):
 
 
 def create_db_structure():
-    def create_collection(name, fields):
+    def create_collection(name, fields, list_rule=None, view_rule=None, create_rule=None, update_rule=None, delete_rule=None):
         dscr = {
             'name': name,
             'fields': std_fields() + fields,
             'indexes': [f"CREATE UNIQUE INDEX `idx_uniq_{f['name']}` ON `{name}` (`{f['name']}`)" for f in fields if
-                        f.get('unique')]
+                        f.get('unique')],
+            'listRule': list_rule,
+            'viewRule': view_rule,
+            'createRule': create_rule,
+            'updateRule': update_rule,
+            'deleteRule': delete_rule,
         }
         resp = __db_session.post(f"{__config.url}/api/collections", json=dscr)
         if resp:
@@ -134,7 +139,7 @@ def create_db_structure():
         ]
 
     create_collection('playlist_config', parse_dataclass(PlaylistConfigResp))
-    create_collection('yt_media_mapping', parse_dataclass(MediaMappingResp))
+    create_collection('yt_media_mapping', parse_dataclass(MediaMappingResp), create_rule='')
     settings_fields = [{'name': 'key', 'type': 'text', 'unique': True}, {'name': 'val', 'type': 'text'}]
     create_collection('yt_sync_settings', settings_fields)
 
