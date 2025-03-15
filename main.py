@@ -5,7 +5,8 @@ from datetime import timedelta
 import pytimeparse
 
 from sync import update_yt_ids_in_db, sync_all_playlists, update_pl_cfg_in_db
-from utils.db import load_settings
+from utils.common import get_nested_value
+from utils.db import load_settings, create_db_structure
 from utils.logs import create_logger
 
 logger = create_logger("main")
@@ -21,13 +22,19 @@ def wait_period():
 def read_version():
     config = configparser.ConfigParser()
     config.read('version.txt')
-    docker_v = config['core']['docker_version']
-    code_v = config['core']['code_version']
+    docker_v = get_nested_value(config, 'core', 'docker_version') or 'NO_VERSION'
+    code_v = get_nested_value(config, 'core', 'code_version') or 'NO_VERSION'
     return f"{docker_v} / {code_v}"
 
 
+def setup_db_structure():
+    create_db_structure()
+
+
 def main():
-    logger.info(f"Starting the sync. Version: {read_version()}")
+    logger.info(f"Version: {read_version()}")
+    setup_db_structure()
+    logger.info(f"Starting the sync.")
     update_pl_cfg_in_db()
     update_yt_ids_in_db()
     sync_all_playlists()
