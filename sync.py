@@ -64,7 +64,7 @@ def sync_all_playlists():
             if pl_cfg.sync:
                 sync_playlist(pl_cfg, user=user, ytm2items=ytm2items, logger=logger)
             else:
-                logger.debug(f"Playlist '{pl_cfg.ytm_pl_name}' has flag SYNC=OFF. Ignoring the playlist.")
+                logger.debug(f"Playlist '{pl_cfg.ytm_pl_name}/{pl_cfg.ytm_pl_id}' has flag SYNC=OFF. Ignoring the playlist.")
         except:
             logger.exception(
                 f"Error happened while syncing YT playlist '{pl_cfg.ytm_pl_name}'[{pl_cfg.ytm_pl_id}] with JF playlist '{pl_cfg.jf_pl_name}'/[{pl_cfg.jf_pl_id}]")
