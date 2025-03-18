@@ -1,4 +1,5 @@
 import dataclasses
+from collections import defaultdict
 import os
 from dataclasses import asdict
 from functools import lru_cache
@@ -101,12 +102,20 @@ def set_setting_if_absent(key, val):
 
 
 def create_db_structure():
-    def create_collection(name, fields, list_rule=None, view_rule=None, create_rule=None, update_rule=None, delete_rule=None):
+    def create_collection(name, fields, list_rule=None, view_rule=None, create_rule=None, update_rule=None,
+                          delete_rule=None):
+        unique_keys = defaultdict(list)
+        for f in fields:
+            key = f['unique_key']
+            if key:
+                unique_keys[key].append(f['name'])
+        indexes = [f"CREATE UNIQUE INDEX `{name}_{k}` ON `{name}` ({','.join(f'`{f}`' for f in fields)})"
+                   for k, fields in
+                   unique_keys.items()]
         dscr = {
             'name': name,
             'fields': std_fields() + fields,
-            'indexes': [f"CREATE UNIQUE INDEX `idx_uniq_{f['name']}` ON `{name}` (`{f['name']}`)" for f in fields if
-                        f.get('unique')],
+            'indexes': indexes,
             'listRule': list_rule,
             'viewRule': view_rule,
             'createRule': create_rule,
@@ -126,6 +135,8 @@ def create_db_structure():
             return 'text'
         elif field.type == bool:
             return 'bool'
+        elif field.type == int:
+            return 'number'
         raise ValueError("Cannot detect a db field type from field: " + field)
 
     def parse_dataclass(dc):
@@ -133,6 +144,7 @@ def create_db_structure():
             {
                 'name': field.name,
                 'type': detect_type(field),
+                'unique_key': field.metadata.get('unique_key'),
             } for field
             in dc.__dataclass_fields__.values()
             if field.name != 'id'
@@ -140,7 +152,7 @@ def create_db_structure():
 
     create_collection('playlist_config', parse_dataclass(PlaylistConfigResp))
     create_collection('yt_media_mapping', parse_dataclass(MediaMappingResp), create_rule='')
-    settings_fields = [{'name': 'key', 'type': 'text', 'unique': True}, {'name': 'val', 'type': 'text'}]
+    settings_fields = [{'name': 'key', 'type': 'text', 'unique_key': 'settings_idx_uniq_key'}, {'name': 'val', 'type': 'text'}]
     create_collection('yt_sync_settings', settings_fields)
 
     set_setting_if_absent('pf2jf_path_conv_search', os.getenv('DEFAULT_PF2JF_PATH_CONV_SEARCH'))
@@ -197,6 +209,7 @@ class Settings:
     pf2jf_path_conv_search: str
     pf2jf_path_conv_replace: str
     jf_user_name: str
+    jf_extract_ytid_regex: str
     wait_time: str = "1m"
 
 
