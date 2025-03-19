@@ -106,7 +106,7 @@ def create_db_structure():
                           delete_rule=None):
         unique_keys = defaultdict(list)
         for f in fields:
-            key = f['unique_key']
+            key = f.get('unique_key')
             if key:
                 unique_keys[key].append(f['name'])
         indexes = [f"CREATE UNIQUE INDEX `{name}_{k}` ON `{name}` ({','.join(f'`{f}`' for f in fields)})"
