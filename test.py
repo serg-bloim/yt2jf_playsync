@@ -1,9 +1,12 @@
 import json
 import re
+import threading
 import unittest
 
 import yt_dlp
 
+from sync import parse_yt_id
+from utils import slack
 from utils.db import load_playlist_configs, load_media_mappings, load_settings, PlaylistConfigResp
 from utils.jf import load_jf_playlist, find_user_by_name, load_all_items, load_item_by_id, save_item, add_media_ids_to_playlist
 from utils.logs import create_logger
@@ -117,6 +120,87 @@ class MyTestCase(unittest.TestCase):
             # ℹ️ ydl.sanitize_info makes the info json-serializable
             print(json.dumps(ydl.sanitize_info(info)))
 
+    def test_slack_message(self):
+        slack.send_message("Just a test message", "#test")
+
+    def test_slack_message_formatted(self):
+        slack.send_message("Just a *test* message with a <http://google.com|link>", "#test")
+
+    def test_slack_interactive(self):
+        slack.send_message("Just a test message", "#test")
+        threading.Event().wait()
+
+    def test_slack_message_blocks(self):
+        layout = [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "New request",
+                    "emoji": True
+                }
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": "*Type:*\nPaid Time Off"
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": "*Created by:*\n<example.com|Fred Enriquez>"
+                    }
+                ]
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": "*When:*\nAug 10 - Aug 13"
+                    }
+                ]
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "emoji": True,
+                            "text": "Approve"
+                        },
+                        "style": "primary",
+                        "value": json.dumps({
+                            "type": "media_metadata_mismatch",
+                            "action": "confirm",
+                            "yt_id": 'aaaaaaa',
+                            "jf_id": 'bbbbbbb'
+                        })
+                    },
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "emoji": True,
+                            "text": "Reject"
+                        },
+                        "style": "danger",
+                        "value": json.dumps({
+                            "type": "media_metadata_mismatch",
+                            "action": "deny",
+                            "yt_id": 'aaaaaaaaa',
+                            "jf_id": 'bbbbbbbbb'
+                        })
+                    }
+                ]
+            }
+        ]
+        parse_yt_id('hgjhgfjgh')
+        slack.send_message("Just a *test* message with a <http://google.com|link>", "#test", blocks=layout)
+        threading.Event().wait()
 
 if __name__ == '__main__':
     unittest.main()

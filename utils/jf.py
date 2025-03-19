@@ -13,6 +13,8 @@ __session__.headers.update({"X-Emby-Token": "c01d7abab8e84d128ad101753a41dead"})
 __jf_url__ = "http://192.168.1.100:8096"
 logger = create_logger("jellyfin_client")
 
+def get_jf_base_url():
+    return __jf_url__
 
 def load_jf_playlist(pl_id, user_id, fields=""):
     fields_str = fields
