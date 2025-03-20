@@ -108,6 +108,15 @@ def sync_all_playlists():
                 f"Error happened while syncing YT playlist '{pl_cfg.ytm_pl_name}'[{pl_cfg.ytm_pl_id}] with JF playlist '{pl_cfg.jf_pl_name}'/[{pl_cfg.jf_pl_id}]")
 
 
+def select_yt_thumbnail(yt_media):
+    thumbnails = yt_media.get('thumbnails') or []
+    def order(th):
+        return th.get('preference') or 100
+
+    best = min(thumbnails, key=order, default={'url':''})
+    return best.get('url')
+
+
 def format_metadata_mismatch_report(yt, jf, user):
     return [
         {
@@ -115,13 +124,28 @@ def format_metadata_mismatch_report(yt, jf, user):
             "fields": [
                 {
                     "type": "mrkdwn",
-                    "text": f"*Artist:*\n{yt['channel']}\n{' '.join(jf['Artists'])}"
+                    "text": f"{yt['channel']}\n<{yt['url']}|{yt['title']}>"
                 },
+            ],
+            "accessory": {
+                "type": "image",
+                "image_url": select_yt_thumbnail(yt),
+                "alt_text": "yt thumbnail"
+            }
+        },
+        {
+            "type": "section",
+            "fields": [
                 {
                     "type": "mrkdwn",
-                    "text": f"*Title:*\n<{yt['url']}|{yt['title']}>\n<{get_jf_base_url()}/web/#/details?id={jf['Id']}&serverId={jf['ServerId']}|{jf['Name']}>"
-                }
-            ]
+                    "text": f"{' '.join(jf['Artists'])}\n<{get_jf_base_url()}/web/#/details?id={jf['Id']}&serverId={jf['ServerId']}|{jf['Name']}>"
+                },
+            ],
+            "accessory": {
+                "type": "image",
+                "image_url": f"{get_jf_base_url()}/Items/{jf['Id']}/Images/Primary",
+                "alt_text": "jf thumbnail"
+            }
         },
         {
             "type": "actions",
@@ -220,7 +244,7 @@ def sync_playlist(pl_config, user=None, items=None, logger=None):
     # slack.send_message('\n'.join([msg0, msg1, msg2]), SLACK_CHANNEL_INFO)
 
     # Send out a report about medias that were not possible to recover automatically
-    for batch in itertools.batched(recovery_media_mismatch, 15):
+    for batch in itertools.batched(recovery_media_mismatch[:2], 15):
         send_mismatch_report(batch, user, SLACK_CHANNEL_MISMATCHED_MEDIA)
 
     log_level_func(msg1)

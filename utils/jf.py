@@ -1,4 +1,5 @@
 import dataclasses
+import os
 
 from jellyfin_apiclient_python import JellyfinClient
 
@@ -10,11 +11,14 @@ import requests
 
 __session__ = requests.Session()
 __session__.headers.update({"X-Emby-Token": "c01d7abab8e84d128ad101753a41dead"})
-__jf_url__ = "http://192.168.1.100:8096"
+__jf_external_url__ = os.getenv('JELLYFIN_PUBLIC_URL')
+__jf_url__ = os.getenv('JELLYFIN_LOCAL_URL') or __jf_external_url__
 logger = create_logger("jellyfin_client")
 
+
 def get_jf_base_url():
-    return __jf_url__
+    return __jf_external_url__
+
 
 def load_jf_playlist(pl_id, user_id, fields=""):
     fields_str = fields
