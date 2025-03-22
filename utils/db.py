@@ -1,8 +1,11 @@
 import dataclasses
+from dataclasses import field
 from collections import defaultdict
 import os
 from dataclasses import asdict
+from datetime import datetime
 from functools import lru_cache
+from typing import List
 
 import requests
 
@@ -41,8 +44,18 @@ class MediaMappingResp:
     jf_id: str
 
 
+@dataclasses.dataclass
+class LocalMediaArchive:
+    id: str
+    created: datetime = field(metadata={'ignore': True})
+    jf_id: str = field(metadata={'unique_key': True})
+    local_path: str
+    exists: bool
+
+
 PlaylistResp_allowed_fields = {field.name for field in PlaylistConfigResp.__dataclass_fields__.values()}
 MediaMappingResp_allowed_fields = {field.name for field in MediaMappingResp.__dataclass_fields__.values()}
+LocalMediaArchive_allowed_fields = {field.name for field in LocalMediaArchive.__dataclass_fields__.values()}
 
 logger = create_logger("db")
 
@@ -125,7 +138,8 @@ def create_db_structure():
         resp = __db_session.post(f"{__config.url}/api/collections", json=dscr)
         if resp:
             return resp.json()
-        elif resp.status_code == 400 and get_nested_value(resp.json(), 'data', 'name', 'code') == 'validation_collection_name_exists':
+        elif resp.status_code == 400 and get_nested_value(resp.json(), 'data', 'name',
+                                                          'code') == 'validation_collection_name_exists':
             logger.debug(f"Collection `{name}` already exists")
         else:
             resp.raise_for_status()
@@ -144,21 +158,30 @@ def create_db_structure():
             {
                 'name': field.name,
                 'type': detect_type(field),
-                'unique_key': field.metadata.get('unique_key'),
+                'unique_key': parse_unique_key(field),
             } for field
             in dc.__dataclass_fields__.values()
-            if field.name != 'id'
+            if not (field.name == 'id' or field.metadata.get("ignore"))
         ]
+
+    def parse_unique_key(field):
+        v = field.metadata.get('unique_key')
+        if isinstance(v, bool):
+            v = field.name
+        return v
 
     create_collection('playlist_config', parse_dataclass(PlaylistConfigResp))
     create_collection('yt_media_mapping', parse_dataclass(MediaMappingResp), create_rule='')
-    settings_fields = [{'name': 'key', 'type': 'text', 'unique_key': 'settings_idx_uniq_key'}, {'name': 'val', 'type': 'text'}]
+    settings_fields = [{'name': 'key', 'type': 'text', 'unique_key': 'settings_idx_uniq_key'},
+                       {'name': 'val', 'type': 'text'}]
     create_collection('yt_sync_settings', settings_fields)
+    create_collection('local_media_archive', parse_dataclass(LocalMediaArchive))
 
     set_setting_if_absent('pf2jf_path_conv_search', os.getenv('DEFAULT_PF2JF_PATH_CONV_SEARCH'))
     set_setting_if_absent('pf2jf_path_conv_replace', os.getenv('DEFAULT_PF2JF_PATH_CONV_REPLACE'))
     set_setting_if_absent('jf_user_name', os.getenv('DEFAULT_JF_USER_NAME'))
     set_setting_if_absent('wait_time', os.getenv('DEFAULT_WAIT_TIME', '24h'))
+    set_setting_if_absent('last_local_media_update_ts', 0)
 
 
 @lru_cache(maxsize=1)
@@ -176,26 +199,27 @@ def save_playlist_config(pl_config: PlaylistConfigResp):
     response.raise_for_status()
 
 
-def load_media_mappings():
-    url = f"{__config.url}/api/collections/yt_media_mapping/records"
-
+def load_all_paged_records(url):
     def load_page(page_n=1):
         params = {"page": page_n, "perPage": 100}
         response = __db_session.get(url, params=params)
         if response:
             json = response.json()
-            mappings = [MediaMappingResp(**{k: v for k, v in pl.items() if k in MediaMappingResp_allowed_fields}) for pl
-                        in json['items']]
-            return mappings, json['page'], json['totalPages'], json['totalItems']
+            return json['items'], json['page'], json['totalPages'], json['totalItems']
 
     first_page, page_n, total_pages, total_items = load_page()
-    all_mappings = []
-    all_mappings += first_page
+    all_items = []
+    all_items += first_page
     while page_n < total_pages:
-        mappings, page_n, total_pages, total_items = load_page(page_n + 1)
-        all_mappings += mappings
+        page_items, page_n, total_pages, total_items = load_page(page_n + 1)
+        all_items += page_items
+    return all_items
 
-    return all_mappings
+
+def load_media_mappings():
+    url = f"{__config.url}/api/collections/yt_media_mapping/records"
+    recs = load_all_paged_records(url)
+    return [MediaMappingResp(**{k: v for k, v in pl.items() if k in MediaMappingResp_allowed_fields}) for pl in recs]
 
 
 def delete_mapping(mapping: MediaMappingResp):
@@ -211,6 +235,7 @@ class Settings:
     jf_user_name: str
     jf_extract_ytid_regex: str
     wait_time: str = "1m"
+    last_local_media_update_ts: int = 0
 
 
 @lru_cache(maxsize=1)
@@ -221,3 +246,28 @@ def load_settings():
     if response:
         data = {entry['key']: entry['val'] for entry in response.json()['items']}
         return Settings(**{k: v for k, v in data.items() if k in allowed_fields})
+
+
+def load_local_media():
+    url = f"{__config.url}/api/collections/local_media_archive/records"
+    recs = load_all_paged_records(url)
+    items = [LocalMediaArchive(**{k: v for k, v in pl.items() if k in LocalMediaArchive_allowed_fields}) for pl in recs]
+    for itm in items:
+        itm.created = datetime.fromisoformat(itm.created)
+    return items
+
+
+def add_local_media(items: List[dict]):
+    url = f"{__config.url}/api/collections/local_media_archive/records"
+    for itm in items:
+        try:
+            resp = __db_session.post(url, data={'jf_id': itm['Id'], 'local_path': itm.get('Path'), 'exists': True})
+            http_code = resp.status_code
+            if resp:
+                logger.debug(f"Added LocalMediaArchive '{itm['Id']}/{itm['Name']}'")
+            elif http_code == 400 and get_nested_value(resp.json(), "data", "key", "code") == 'validation_not_unique':
+                logger.debug(f"Setting '{itm['Id']}/{itm['Name']}' already exists")
+            else:
+                resp.raise_for_status()
+        except:
+            logger.exception(f"Cannot save a LocalMediaArchive entry '{itm['Id']}/{itm['Name']}'")

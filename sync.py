@@ -5,7 +5,8 @@ import re
 from dataclasses import replace
 from utils import slack
 from utils.common import get_nested_value
-from utils.db import load_media_mappings, load_settings, load_playlist_configs, save_playlist_config
+from utils.db import load_media_mappings, load_settings, load_playlist_configs, save_playlist_config, load_local_media, \
+    add_local_media
 from utils.jf import load_all_items, find_user_by_name, load_item_by_id, save_item, load_jf_playlist, \
     add_media_ids_to_playlist, create_playlist, get_jf_base_url
 from utils.logs import create_logger
@@ -22,11 +23,12 @@ def parse_yt_id(path, regex=load_settings().jf_extract_ytid_regex):
     if m:
         return m.group()
 
+
 def process_media_metadata_mismatch(payload, req):
     logger = create_logger("yt_meta_mismatch_fix")
-    yt_id=payload['yt_id']
-    jf_id=payload['jf_id']
-    uid=payload['uid']
+    yt_id = payload['yt_id']
+    jf_id = payload['jf_id']
+    uid = payload['uid']
     jf_item_full = load_item_by_id(jf_id, uid)
     old_yt_id = get_nested_value(jf_item_full, 'ProviderIds', 'YT')
     if old_yt_id is None:
@@ -39,11 +41,14 @@ def process_media_metadata_mismatch(payload, req):
 
     pass
 
+
 def process_media_metadata_sync(payload, req):
     sync_all_playlists()
 
+
 add_slack_interactive_message_handler("media_metadata_mismatch", process_media_metadata_mismatch)
 add_slack_interactive_message_handler("sync_playlists", process_media_metadata_sync)
+
 
 def update_yt_ids_in_db():
     logger = create_logger("yt_ids_sync")
@@ -95,25 +100,44 @@ def sync_all_playlists():
     jf_items = load_all_items("Audio", "Path,ProviderIds")
     settings = load_settings()
     user = find_user_by_name(settings.jf_user_name)
-
+    pl_additions = {}
+    pl_misses = {}
     for pl_cfg in pl_configs:
         try:
             if pl_cfg.sync:
-                sync_playlist(pl_cfg, user=user, items=jf_items, logger=logger)
+                added_into_playlist, not_found = sync_playlist(pl_cfg, user=user, items=jf_items, logger=logger)
+                pl_additions[pl_cfg.jf_pl_id] = added_into_playlist
+                pl_misses[pl_cfg.jf_pl_id] = not_found
             else:
-                logger.debug(
-                    f"Playlist '{pl_cfg.ytm_pl_name}/{pl_cfg.ytm_pl_id}' has flag SYNC=OFF. Ignoring the playlist.")
+                logger.debug(f"Playlist '{pl_cfg.ytm_pl_name}/{pl_cfg.ytm_pl_id}' has flag SYNC=OFF. Ignoring the playlist.")
         except:
-            logger.exception(
-                f"Error happened while syncing YT playlist '{pl_cfg.ytm_pl_name}'[{pl_cfg.ytm_pl_id}] with JF playlist '{pl_cfg.jf_pl_name}'/[{pl_cfg.jf_pl_id}]")
+            logger.exception(f"Error happened while syncing YT playlist '{pl_cfg.ytm_pl_name}'[{pl_cfg.ytm_pl_id}] with JF playlist '{pl_cfg.jf_pl_name}'/[{pl_cfg.jf_pl_id}]")
+
+    local_media = load_local_media()
+    local_media_ids = {m.jf_id for m in local_media}
+    new_items = [itm for itm in jf_items if itm['Id'] not in local_media_ids]
+    add_local_media(new_items)
+    pl_lookup = {pl.jf_pl_id: pl for pl in pl_configs}
+    if new_items:
+        msg = "New items:\n"
+        for pl_id, new_ids in pl_additions.items():
+            if new_ids:
+                pl_cfg = pl_lookup[pl_id]
+                msg += f"{pl_cfg.jf_pl_name} got {len(new_ids)} new media"
+        playlist_new_media = {id for pl_ids in pl_additions.values() for id in pl_ids}
+        no_playlist_new_media = [m for m in new_items if m['Id'] not in playlist_new_media]
+        if no_playlist_new_media:
+            msg += f"{len(no_playlist_new_media)} new media in Library"
+        slack.send_message(msg, SLACK_CHANNEL_DEFAULT)
 
 
 def select_yt_thumbnail(yt_media):
     thumbnails = yt_media.get('thumbnails') or []
+
     def order(th):
         return th.get('preference') or 100
 
-    best = min(thumbnails, key=order, default={'url':''})
+    best = min(thumbnails, key=order, default={'url': ''})
     return best.get('url')
 
 
@@ -159,12 +183,12 @@ def format_metadata_mismatch_report(yt, jf, user):
                     },
                     "style": "primary",
                     "value": json.dumps({
-                                          "type": "media_metadata_mismatch",
-                                          "action": "confirm",
-                                          "yt_id": yt['id'],
-                                          "jf_id": jf['Id'],
-                                          "uid": user.id,
-                                        })
+                        "type": "media_metadata_mismatch",
+                        "action": "confirm",
+                        "yt_id": yt['id'],
+                        "jf_id": jf['Id'],
+                        "uid": user.id,
+                    })
                 },
                 {
                     "type": "button",
@@ -174,9 +198,9 @@ def format_metadata_mismatch_report(yt, jf, user):
                         "text": "Sync"
                     },
                     "style": "danger",
-                    "value":  json.dumps({
-                                          "type": "sync_playlists",
-                                        })
+                    "value": json.dumps({
+                        "type": "sync_playlists",
+                    })
                 }
             ]
         }
@@ -211,8 +235,7 @@ def sync_playlist(pl_config, user=None, items=None, logger=None):
         jf_item = ytm2items.get(yt_id)
         if jf_item:
             already_in_library.append(jf_item['Id'])
-            logger.info(
-                f"Queueing media '{jf_item['Name']}'[{yt_song['url']}] into JF playlist '{pl_config.jf_pl_name}'")
+            logger.info(f"Queueing media '{jf_item['Name']}'[{yt_song['url']}] into JF playlist '{pl_config.jf_pl_name}'")
         else:
             if yt_id in recovered_items:
                 recovered = recovered_items[yt_id]
@@ -221,11 +244,9 @@ def sync_playlist(pl_config, user=None, items=None, logger=None):
                     jf_item_full['ProviderIds']['YT'] = yt_id
                     if save_item(jf_item_full):
                         already_in_library.append(recovered['Id'])
-                        logger.info(
-                            f"Recovered YT media {yt_song['title']} / {yt_song['channel']} from local media {recovered['Name']} / {recovered['Artists']}")
+                        logger.info(f"Recovered YT media {yt_song['title']} / {yt_song['channel']} from local media {recovered['Name']} / {recovered['Artists']}")
                     else:
-                        logger.warning(
-                            f"Cannot save yt_id{yt_id}({yt_song['channel']}/{yt_song['title']}) for local media '{recovered['Name']} / {recovered['Artists']} ({recovered['Id']})'")
+                        logger.warning(f"Cannot save yt_id{yt_id}({yt_song['channel']}/{yt_song['title']}) for local media '{recovered['Name']} / {recovered['Artists']} ({recovered['Id']})'")
                 else:
                     not_in_lib.append(yt_song)
                     recovery_media_mismatch.append((yt_song, recovered))
@@ -237,10 +258,8 @@ def sync_playlist(pl_config, user=None, items=None, logger=None):
 
     added_n = add_media_ids_to_playlist(pl_config.jf_pl_id, already_in_library, user_id=user.id)
     log_level_func = logger.info if added_n == len(already_in_library) else logger.warning
-    msg0 = f"Syncing playlist '{pl_config.ytm_pl_name}/{pl_config.jf_pl_name}'"
     msg1 = f"Added {added_n} out of {len(already_in_library)} possible medias into the playlist {pl_config.jf_pl_name}"
     msg2 = f"{len(not_in_lib)} medias are not in the library"
-    # slack.send_message('\n'.join([msg0, msg1, msg2]), SLACK_CHANNEL_INFO)
 
     # Send out a report about medias that were not possible to recover automatically
     for batch in itertools.batched(recovery_media_mismatch[:2], 15):
@@ -249,6 +268,8 @@ def sync_playlist(pl_config, user=None, items=None, logger=None):
     log_level_func(msg1)
     if not_in_lib:
         logger.warning(msg2)
+
+    return already_in_library, not_in_lib
 
 
 def update_pl_cfg_in_db():

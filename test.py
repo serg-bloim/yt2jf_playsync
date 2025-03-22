@@ -5,10 +5,11 @@ import unittest
 
 import yt_dlp
 
-from sync import parse_yt_id
+from sync import parse_yt_id, sync_all_playlists
 from utils import slack
-from utils.db import load_playlist_configs, load_media_mappings, load_settings, PlaylistConfigResp
-from utils.jf import load_jf_playlist, find_user_by_name, load_all_items, load_item_by_id, save_item, add_media_ids_to_playlist
+from utils.db import load_playlist_configs, load_media_mappings, load_settings, PlaylistConfigResp, load_local_media
+from utils.jf import load_jf_playlist, find_user_by_name, load_all_items, load_item_by_id, save_item, \
+    add_media_ids_to_playlist
 from utils.logs import create_logger
 from utils.ytm import load_flat_playlist
 
@@ -38,7 +39,10 @@ class MyTestCase(unittest.TestCase):
     def test_load_settings(self):
         settings = load_settings()
         print(settings)
-        pass
+
+    def test_sync_playlists(self):
+
+        sync_all_playlists()
 
     def test_update_yt_id(self):
         mappings = load_media_mappings()
@@ -64,7 +68,8 @@ class MyTestCase(unittest.TestCase):
         pass
 
     def test_sync_1_playlist(self):
-        pl_config = PlaylistConfigResp('', 'aa25b691a51fdc12c6c66d7cdeb58056', 'AlisaYTM', 'PLmK_pBmX9bLEbzPI7OCeILf9fg4k1-koA', 'Alisa_likes')
+        pl_config = PlaylistConfigResp('', 'aa25b691a51fdc12c6c66d7cdeb58056', 'AlisaYTM',
+                                       'PLmK_pBmX9bLEbzPI7OCeILf9fg4k1-koA', 'Alisa_likes')
         jf_items = load_all_items("Audio", "ProviderIds")
         ytm2items = {itm['ProviderIds']['YT']: itm for itm in jf_items if 'YT' in itm['ProviderIds']}
         settings = load_settings()
@@ -81,13 +86,16 @@ class MyTestCase(unittest.TestCase):
             jf_item = ytm2items.get(yt_id)
             if jf_item:
                 already_in_library.append(jf_item['Id'])
-                logger.info(f"Queueing media '{jf_item['Name']}'[{yt_song['url']}] into JF playlist '{pl_config.jf_pl_id}'")
+                logger.info(
+                    f"Queueing media '{jf_item['Name']}'[{yt_song['url']}] into JF playlist '{pl_config.jf_pl_id}'")
             else:
-                logger.warning(f"Cannot find media '{yt_song['channel']}/{yt_song['title']}'[{yt_song['url']}] in local library.")
+                logger.warning(
+                    f"Cannot find media '{yt_song['channel']}/{yt_song['title']}'[{yt_song['url']}] in local library.")
         added_n = add_media_ids_to_playlist(pl_config.jf_pl_id, already_in_library, user_id=user.id)
 
         log_level_func = logger.info if added_n == len(already_in_library) else logger.warning
-        log_level_func(f"Added {added_n} out of {len(already_in_library)} possible medias into the playlist {pl_config.jf_pl_id}")
+        log_level_func(
+            f"Added {added_n} out of {len(already_in_library)} possible medias into the playlist {pl_config.jf_pl_id}")
 
     def test_ytm_load_playlist(self):
         pl_id = 'PL8xOIxSY5muBpfssqpnGSAfGIeJlR9Za0'
@@ -119,6 +127,10 @@ class MyTestCase(unittest.TestCase):
             info = ydl.extract_info(URL, download=False, process=False)
             # ℹ️ ydl.sanitize_info makes the info json-serializable
             print(json.dumps(ydl.sanitize_info(info)))
+
+    def test_date_field(self):
+        media = load_local_media()
+        pass
 
     def test_slack_message(self):
         slack.send_message("Just a test message", "#test")
@@ -201,6 +213,7 @@ class MyTestCase(unittest.TestCase):
         parse_yt_id('hgjhgfjgh')
         slack.send_message("Just a *test* message with a <http://google.com|link>", "#test", blocks=layout)
         threading.Event().wait()
+
 
 if __name__ == '__main__':
     unittest.main()
