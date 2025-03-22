@@ -233,8 +233,7 @@ def sync_playlist(pl_config, user=None, items=None, logger=None):
                         f"Metadata doesn't match for recovery: YT media {yt_song['title']} / {yt_song['channel']}[{yt_id}] and local media {recovered['Name']} / {recovered['Artists']}[{recovered['Id']}]")
             else:
                 not_in_lib.append(yt_song)
-                logger.warning(
-                    f"Cannot find media '{yt_song['channel']}/{yt_song['title']}'[{yt_song['url']}] in local library.")
+                logger.warning(f"Cannot find media '{yt_song['channel']}/{yt_song['title']}'[{yt_song['url']}] in local library.")
 
     added_n = add_media_ids_to_playlist(pl_config.jf_pl_id, already_in_library, user_id=user.id)
     log_level_func = logger.info if added_n == len(already_in_library) else logger.warning
