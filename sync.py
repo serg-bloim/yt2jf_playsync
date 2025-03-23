@@ -119,15 +119,15 @@ def sync_all_playlists():
     add_local_media(new_items)
     pl_lookup = {pl.jf_pl_id: pl for pl in pl_configs}
     if new_items:
-        msg = "New items:\n"
+        msg = "New items:"
         for pl_id, new_ids in pl_additions.items():
             if new_ids:
                 pl_cfg = pl_lookup[pl_id]
-                msg += f"{pl_cfg.jf_pl_name} got {len(new_ids)} new media"
+                msg += f"\n{pl_cfg.jf_pl_name} got {len(new_ids)} new media"
         playlist_new_media = {id for pl_ids in pl_additions.values() for id in pl_ids}
         no_playlist_new_media = [m for m in new_items if m['Id'] not in playlist_new_media]
         if no_playlist_new_media:
-            msg += f"{len(no_playlist_new_media)} new media in Library"
+            msg += f"\n{len(no_playlist_new_media)} new media in Library"
         slack.send_message(msg, SLACK_CHANNEL_DEFAULT)
 
 
