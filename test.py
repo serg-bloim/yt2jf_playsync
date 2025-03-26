@@ -1,17 +1,23 @@
 import json
+import os
 import re
 import threading
 import unittest
+from threading import Event
 
 import yt_dlp
+from pyyoutube import Client
+from slack_sdk.socket_mode.request import SocketModeRequest
 
-from sync import parse_yt_id, sync_all_playlists
+from sync import parse_yt_id, sync_all_playlists, sub_videos_with_songs, sync_playlist
 from utils import slack
-from utils.db import load_playlist_configs, load_media_mappings, load_settings, PlaylistConfigResp, load_local_media
+from utils.common import first
+from utils.db import load_playlist_configs, load_media_mappings, load_settings, PlaylistConfigResp, load_local_media, load_guser_by_id, load_yt_automated_playbooks
 from utils.jf import load_jf_playlist, find_user_by_name, load_all_items, load_item_by_id, save_item, \
     add_media_ids_to_playlist
 from utils.logs import create_logger
-from utils.ytm import load_flat_playlist
+from utils.web import run_auth_server
+from utils.ytm import load_flat_playlist, createYtMusic
 
 logger = create_logger("main")
 
@@ -214,6 +220,51 @@ class MyTestCase(unittest.TestCase):
         slack.send_message("Just a *test* message with a <http://google.com|link>", "#test", blocks=layout)
         threading.Event().wait()
 
+    def test_video_song_sub(self):
+        sub_videos_with_songs()
+
+    def test_YTMusic_oauth(self):
+        at = 'ya29.a0AeXRPp49JdEeYAW58-wPejnAIikVdDKLThbGkm0GH1wPzIVUc3skzCgmdLpgaT1v5UpSW9lvdMKTkZEOnLSOleKsi3iLMkCQiXxC-zTf_mVYV2imLLsY6jj24YybAKlO1_rKKPaGv9ktCykCO1c7Y8WfT9Fuhp0p_jkGK9_NaCgYKARASARESFQHGX2MiOr5TEIRPkT5FE43GYa6lPg0175'
+        rt = '1//05p42oaAOJSA-CgYIARAAGAUSNwF-L9IreNBjDWRH5fKav4f6gijWSwwzMQBoQHXiLuSbn8-aYddyKd9fEJFO3jexEpT4T2R9Phw'
+
+        ytmusic = createYtMusic(at, rt)
+        song = ytmusic.get_song('bY3vXr7fm8k')
+        pass
+
+    def test_slack_bot(self):
+        slack.__setup_slack_callback__()
+        Event().wait()
+
+    def test_slack_socket_mode(self):
+        ytc = Client(client_id=os.getenv('GOOGLE_APP_CLIENT_ID'), client_secret=os.getenv('GOOGLE_APP_CLIENT_SECRET'))
+
+        def on_shortcut(req: SocketModeRequest):
+            guser_id = os.getenv('GOOGLE_USER_ID')
+            usr = load_guser_by_id(guser_id)
+            playbooks = [pl for pl in load_yt_automated_playbooks() if pl.yt_pl_id == usr.yt_user_id]
+            if playbooks:
+                if usr.is_refresh_token_valid():
+                    if not usr.is_access_token_valid():
+                        # Replace with a token refresh
+                        return
+                playlists_list = ytc.playlists.list(playlist_id=[pl.yt_pl_id for pl in playbooks])
+
+            authorize_url, app_name = ytc.get_authorize_url(scope=['https://www.googleapis.com/auth/youtube', 'https://www.googleapis.com/auth/userinfo.profile'],
+                                                            redirect_uri='https://localhost:1234/abc',
+                                                            state='abc',
+                                                            prompt="consent")
+
+            slack.send_ephemeral(authorize_url, req.payload['user']['id'], req.payload['user']['id'])
+            pass
+
+        slack.add_slack_shortcut_handler('vsd-init-scan', on_shortcut)
+        slack.__setup_slack_callback__()
+        run_auth_server(ytc)
+
+    def test_sync_playlist(self):
+        pl = first(pl for pl in load_playlist_configs() if pl.jf_pl_name=='roadtrip')
+        sync_playlist(pl)
+        pass
 
 if __name__ == '__main__':
     unittest.main()

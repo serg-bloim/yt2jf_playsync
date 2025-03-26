@@ -1,11 +1,13 @@
 import dataclasses
-from dataclasses import field
-from collections import defaultdict
 import os
+import time
+from collections import defaultdict
 from dataclasses import asdict
+from dataclasses import field
 from datetime import datetime
+from enum import Enum, auto
 from functools import lru_cache
-from typing import List
+from typing import List, Tuple
 
 import requests
 
@@ -53,9 +55,66 @@ class LocalMediaArchive:
     exists: bool
 
 
-PlaylistResp_allowed_fields = {field.name for field in PlaylistConfigResp.__dataclass_fields__.values()}
-MediaMappingResp_allowed_fields = {field.name for field in MediaMappingResp.__dataclass_fields__.values()}
-LocalMediaArchive_allowed_fields = {field.name for field in LocalMediaArchive.__dataclass_fields__.values()}
+@dataclasses.dataclass
+class YtMediaMetadata:
+    id: str
+    yt_id: str = field(metadata={'unique_key': True})
+    title: str
+    artist: str
+    category: str
+    album_name: str = ''
+    duration: int = 0
+    views_cnt: int = 0
+    thumbnail_url: str = ''
+    alt_id: str = None
+    col_name = 'yt_media_metadata'
+
+
+@dataclasses.dataclass
+class YtAutomatedPlaylist:
+    yt_pl_id: str
+    yt_user: str
+    vsd_replace_in_src: bool = False
+    vsd_replace_during_copy: bool = False
+    copy: bool = False
+    copy_dst: str = None
+    comment: str = None
+    col_name = 'yt_automated_playlist'
+
+
+@dataclasses.dataclass
+class GUser:
+    id: str
+    yt_user_id: str = field(metadata={'unique_key': True})
+    yt_username: str
+    slack_user: str = None
+    access_token: str = None
+    access_token_expires: int = None
+    refresh_token: str = None
+    refresh_token_expires: int = None
+    comment: str = None
+    col_name = 'google_user'
+
+    def is_refresh_token_valid(self):
+        return self.refresh_token and self.refresh_token_expires > time.time()
+
+    def is_access_token_valid(self):
+        return self.access_token and self.access_token_expires > time.time()
+
+
+class CreateOpResult(Enum):
+    CREATED = auto()
+    DUPLICATE = auto()
+    ERROR = auto()
+
+
+def calc_allowed_fields(clazz) -> Tuple:
+    return tuple(field.name for field in dataclasses.fields(clazz))
+
+
+PlaylistResp_allowed_fields = calc_allowed_fields(PlaylistConfigResp)
+MediaMappingResp_allowed_fields = calc_allowed_fields(MediaMappingResp)
+LocalMediaArchive_allowed_fields = calc_allowed_fields(LocalMediaArchive)
 
 logger = create_logger("db")
 
@@ -160,7 +219,7 @@ def create_db_structure():
                 'type': detect_type(field),
                 'unique_key': parse_unique_key(field),
             } for field
-            in dc.__dataclass_fields__.values()
+            in dataclasses.fields(dc)
             if not (field.name == 'id' or field.metadata.get("ignore"))
         ]
 
@@ -176,6 +235,9 @@ def create_db_structure():
                        {'name': 'val', 'type': 'text'}]
     create_collection('yt_sync_settings', settings_fields)
     create_collection('local_media_archive', parse_dataclass(LocalMediaArchive))
+    models = [YtMediaMetadata, YtAutomatedPlaylist, GUser]
+    for model in models:
+        create_collection(model.col_name, parse_dataclass(model))
 
     set_setting_if_absent('pf2jf_path_conv_search', os.getenv('DEFAULT_PF2JF_PATH_CONV_SEARCH'))
     set_setting_if_absent('pf2jf_path_conv_replace', os.getenv('DEFAULT_PF2JF_PATH_CONV_REPLACE'))
@@ -199,9 +261,9 @@ def save_playlist_config(pl_config: PlaylistConfigResp):
     response.raise_for_status()
 
 
-def load_all_paged_records(url):
+def load_all_paged_records(url, filter=None):
     def load_page(page_n=1):
-        params = {"page": page_n, "perPage": 100}
+        params = {"page": page_n, "perPage": 100, "filter": filter}
         response = __db_session.get(url, params=params)
         if response:
             json = response.json()
@@ -242,7 +304,7 @@ class Settings:
 def load_settings():
     url = f"{__config.url}/api/collections/yt_sync_settings/records"
     response = __db_session.get(url)
-    allowed_fields = {field.name for field in Settings.__dataclass_fields__.values()}
+    allowed_fields = {field.name for field in dataclasses.fields(Settings)}
     if response:
         data = {entry['key']: entry['val'] for entry in response.json()['items']}
         return Settings(**{k: v for k, v in data.items() if k in allowed_fields})
@@ -271,3 +333,70 @@ def add_local_media(items: List[dict]):
                 resp.raise_for_status()
         except:
             logger.exception(f"Cannot save a LocalMediaArchive entry '{itm['Id']}/{itm['Name']}'")
+
+
+def load_yt_media_metadata(allowed_fields=calc_allowed_fields(YtMediaMetadata), **filters):
+    def decorate(v):
+        if v is None:
+            return 'null'
+        return f"'{v}'"
+
+    filter = " && ".join(f"{k} = {decorate(v)}" for k, v in filters.items())
+    if filter:
+        filter = f"({filter})"
+    url = f"{__config.url}/api/collections/yt_media_metadata/records"
+    recs = load_all_paged_records(url, filter=filter)
+    items = [YtMediaMetadata(**{k: v for k, v in pl.items() if k in allowed_fields}) for pl in recs]
+    return items
+
+
+def create_yt_media_metadata(media_metadata: YtMediaMetadata) -> CreateOpResult:
+    url = f"{__config.url}/api/collections/yt_media_metadata/records"
+    try:
+        resp = __db_session.post(url, data=asdict(media_metadata))
+        http_code = resp.status_code
+        if resp:
+            logger.debug(f"Added YtMediaMetadata '{media_metadata.yt_id}/{media_metadata.title}'")
+            return CreateOpResult.CREATED
+        elif http_code == 400 and get_nested_value(resp.json(), "data", "yt_id", "code") == 'validation_not_unique':
+            logger.debug(f"YtMediaMetadata '{media_metadata.yt_id}/{media_metadata.title}' already exists")
+            return CreateOpResult.DUPLICATE
+        else:
+            resp.raise_for_status()
+    except:
+        logger.exception(f"Cannot save a YtMediaMetadata '{media_metadata.yt_id}/{media_metadata.title}'")
+    return CreateOpResult.ERROR
+
+
+def save_yt_media_metadata(mm: YtMediaMetadata):
+    url = f"{__config.url}/api/collections/{mm.col_name}/records/{mm.id}"
+    response = __db_session.patch(url, json=asdict(mm))
+    response.raise_for_status()
+
+
+def load_yt_automated_playbooks(allowed_fields=calc_allowed_fields(YtAutomatedPlaylist)):
+    url = f"{__config.url}/api/collections/{YtAutomatedPlaylist.col_name}/records"
+    recs = load_all_paged_records(url)
+    items = [YtAutomatedPlaylist(**filter_fields(pl, allowed_fields)) for pl in recs]
+    return items
+
+
+def load_guser_by_id(guid: str, allowed_fields=calc_allowed_fields(GUser)) -> GUser:
+    url = f"{__config.url}/api/collections/{GUser.col_name}/records"
+    params = {'filter': f"yt_user_id='{guid}'"}
+    resp = __db_session.get(url, params=params)
+    if resp.status_code == 200:
+        items = resp.json()['items']
+        if len(items) == 1:
+            itm = items[0]
+            return GUser(**filter_fields(itm, allowed_fields))
+
+
+def save_guser(user: GUser):
+    url = f"{__config.url}/api/collections/{user.col_name}/records/{user.id}"
+    response = __db_session.patch(url, json=asdict(user))
+    response.raise_for_status()
+
+
+def filter_fields(d, fields):
+    return {k: v for k, v in d.items() if k in fields}

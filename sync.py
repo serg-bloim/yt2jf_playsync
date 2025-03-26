@@ -1,17 +1,25 @@
 import itertools
 import json
 import os
+import random
 import re
 from dataclasses import replace
+from typing import List
+
+from slack_sdk.socket_mode.request import SocketModeRequest
+from ytmusicapi import YTMusic
+
 from utils import slack
-from utils.common import get_nested_value
+from utils.common import get_nested_value, first
 from utils.db import load_media_mappings, load_settings, load_playlist_configs, save_playlist_config, load_local_media, \
-    add_local_media
+    add_local_media, load_yt_automated_playbooks, load_yt_media_metadata, YtMediaMetadata, save_yt_media_metadata, load_guser_by_id, create_yt_media_metadata
 from utils.jf import load_all_items, find_user_by_name, load_item_by_id, save_item, load_jf_playlist, \
     add_media_ids_to_playlist, create_playlist, get_jf_base_url
 from utils.logs import create_logger
-from utils.slack import add_slack_interactive_message_handler
-from utils.ytm import load_flat_playlist
+from utils.slack import add_slack_interactive_message_handler, add_slack_shortcut_handler, send_ephemeral
+from utils.ytm import load_flat_playlist, createYtMusic, refresh_access_token, Category
+
+NO_IMAGE_AVAILABLE_URL = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/300px-No_image_available.svg.png'
 
 SLACK_CHANNEL_DEFAULT = '#playsync'
 SLACK_CHANNEL_INFO = os.getenv('SLACK_CHANNEL_PLAYSYNC_INFO', SLACK_CHANNEL_DEFAULT)
@@ -24,8 +32,9 @@ def parse_yt_id(path, regex=load_settings().jf_extract_ytid_regex):
         return m.group()
 
 
-def process_media_metadata_mismatch(payload, req):
+def process_media_metadata_mismatch(action, req):
     logger = create_logger("yt_meta_mismatch_fix")
+    payload = json.loads(action['value'])
     yt_id = payload['yt_id']
     jf_id = payload['jf_id']
     uid = payload['uid']
@@ -42,12 +51,42 @@ def process_media_metadata_mismatch(payload, req):
     pass
 
 
-def process_media_metadata_sync(payload, req):
+def process_media_metadata_sync(action, req):
     sync_all_playlists()
+
+
+def process_video_replacement(action, req: SocketModeRequest):
+    logger = create_logger("yt_auto.v2s")
+    data = json.loads(action['selected_option']['value'])
+    sid = data['sid']
+    vid = data['vid']
+    if sid and vid:
+        if mm := first(load_yt_media_metadata(yt_id=vid)):
+            mm.alt_id = sid
+            save_yt_media_metadata(mm)
+            logger.info(f"Associated video {mm.yt_id} {mm.title} by {mm.artist} with media {mm.alt_id}")
+    pass
+
+
+def process_video_scan(req: SocketModeRequest):
+    sub_videos_with_songs()
+
+
+def process_init_video_resolve(req: SocketModeRequest):
+    metadata = load_yt_media_metadata(alt_id=None, category='video')
+    uid = req.payload['user']['id']
+    if metadata:
+        vids = [mm.yt_id for mm in metadata]
+        resolve_video_substitution(vids, uid)
+    else:
+        send_ephemeral("There are no videos for replacement", '#test', uid)
 
 
 add_slack_interactive_message_handler("media_metadata_mismatch", process_media_metadata_mismatch)
 add_slack_interactive_message_handler("sync_playlists", process_media_metadata_sync)
+add_slack_interactive_message_handler("video_replacement", process_video_replacement)
+add_slack_shortcut_handler("vsd-init-scan", process_video_scan)
+add_slack_shortcut_handler("vsd-resolve-videos", process_init_video_resolve)
 
 
 def update_yt_ids_in_db():
@@ -182,8 +221,8 @@ def format_metadata_mismatch_report(yt, jf, user):
                         "text": "Approve"
                     },
                     "style": "primary",
+                    "action_id": "media_metadata_mismatch",
                     "value": json.dumps({
-                        "type": "media_metadata_mismatch",
                         "action": "confirm",
                         "yt_id": yt['id'],
                         "jf_id": jf['Id'],
@@ -197,6 +236,7 @@ def format_metadata_mismatch_report(yt, jf, user):
                         "emoji": True,
                         "text": "Sync"
                     },
+                    "action_id": "sync_playlists",
                     "style": "danger",
                     "value": json.dumps({
                         "type": "sync_playlists",
@@ -319,3 +359,199 @@ def update_pl_cfg_in_db():
         except:
             logger.exception(
                 f"Error happened while syncing YT playlist({pl_cfg.ytm_pl_id}) with JF playlist '{pl_cfg.jf_pl_name}'")
+
+
+def format_vid_replacement_message(video_meta: YtMediaMetadata, song_candidates_meta: list[YtMediaMetadata]):
+    def format_scaled_number(n):
+        formats = {1_000_000_000: 'B', 1_000_000: 'M', 1_000: 'K'}
+        for b, s in formats.items():
+            if n >= b:
+                return f"{n / b:.1f}{s}"
+        return str(n)
+
+    def format_duration(dur_sec: int):
+        min = dur_sec // 60
+        sec = dur_sec % 60
+        return f"{min}:{sec:02}"
+
+    blocks = []
+    video_url = f"https://music.youtube.com/watch?v={video_meta.yt_id}"
+    artists = video_meta.artist
+    blocks.append({
+        "type": "section",
+        "fields": [
+            {
+                "type": "mrkdwn",
+                "text": f"""*VIDEO to replace*
+<{video_url}|{video_meta.title}> ({format_duration(video_meta.duration)})
+<{video_url}|by {artists}>"""
+            },
+        ],
+        "accessory": {
+            "type": "image",
+            "image_url": video_meta.thumbnail_url or NO_IMAGE_AVAILABLE_URL,
+            "alt_text": "yt thumbnail"
+        }
+    })
+    options = []
+    for i, s in enumerate(song_candidates_meta, start=1):
+        views = format_scaled_number(s.views_cnt)
+        artists = s.artist
+        sid = s.yt_id
+        song_url = f"https://music.youtube.com/watch?v={sid}"
+        short_title = s.title[:20]
+        short_artists = artists[:20]
+        options.append((sid, f"{i}. {short_title} ({format_duration(s.duration)})\nby {short_artists} ({views})"))
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"""{i}. <{song_url}|{s.title}> ({format_duration(s.duration)})
+     <{song_url}|{s.album_name}>
+     <{song_url}|by {artists}> {views} views"""
+            },
+            "accessory": {
+                "type": "image",
+                "image_url": s.thumbnail_url or NO_IMAGE_AVAILABLE_URL,
+                "alt_text": "yt thumbnail"
+            }
+        })
+        # print(f"Candidate: {s['title']} - {artists} ({views} views) https://music.youtube.com/watch?v={sid}  Thumbnail: {pick_thumbnail(s['thumbnails'])}")
+
+    blocks.append({
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": "Select a replacement"
+        },
+        "accessory": {
+            "type": "overflow",
+            "options": [{
+                "text": {
+                    "type": "plain_text",
+                    "text": opt
+                },
+                "value": json.dumps({
+                    'vid': video_meta.yt_id,
+                    'sid': sid
+                })
+            } for sid, opt in options],
+            "action_id": f"video_replacement"
+        }
+    })
+    return blocks
+
+
+def extract_meta(song_search_rec):
+    return YtMediaMetadata(id='',
+                           yt_id=song_search_rec['videoId'],
+                           title=song_search_rec['title'],
+                           artist=', '.join(a['name'] for a in song_search_rec['artists']),
+                           category=song_search_rec['resultType'],
+                           album_name=song_search_rec['album']['name'],
+                           duration=song_search_rec['duration_seconds'],
+                           views_cnt=song_search_rec.get('views'),
+                           thumbnail_url=max(song_search_rec['thumbnails'], key=lambda thn: thn['height'], default={'url': ''})['url'])
+
+
+def resolve_video_substitution(vid_sub_candidates: List[str], slack_user_recipient):
+    ytm = YTMusic()
+    logger = create_logger("yt_auto.v2s")
+    metadata: dict[str, YtMediaMetadata] = {mm.yt_id: mm for mm in load_yt_media_metadata(alt_id=None)}
+    candidates_meta = [metadata[v] for v in vid_sub_candidates if v in metadata]
+    if diff := len(vid_sub_candidates) - len(candidates_meta) > 0:
+        logger.warning(f"{diff} medias are not in db/metadata")
+    if candidates_meta:
+        sample_size = min(len(candidates_meta), int(os.getenv("V2S_SAMPLE_SIZE", default='5')))
+        logger.info(f"Resolving {sample_size} videos out of {len(candidates_meta)}")
+        sample: list[YtMediaMetadata] = random.sample(candidates_meta, sample_size)
+        for vm in sample:
+            query = f"{vm.title} {vm.artist}"
+            logger.debug(f"Searching for [{query}] videoId='{vm.yt_id}'")
+            songs = ytm.search(query, 'songs')
+            if songs:
+                top5res = [extract_meta(s) for s in songs[:5]]
+                for s in top5res:
+                    if s.views_cnt is None:
+                        song = ytm.get_song(s.yt_id)
+                        s.views_cnt = int(get_nested_value(song, 'videoDetails', 'viewCount') or '0')
+                slack.send_ephemeral(f"123", "#test", slack_user_recipient, blocks=format_vid_replacement_message(vm, top5res))
+                pass
+
+
+def sub_videos_with_songs():
+    logger = create_logger("yt_auto.v2s")
+    guser_id = os.getenv('GOOGLE_USER_ID')
+    usr = load_guser_by_id(guser_id)
+    pl_cfgs = [pl for pl in load_yt_automated_playbooks() if pl.yt_user == usr.yt_user_id and (pl.vsd_replace_in_src or pl.vsd_replace_during_copy or pl.copy)]
+    yt_media_metadata = {mm.yt_id: mm for mm in load_yt_media_metadata()}
+    if pl_cfgs:
+        if usr.is_refresh_token_valid():
+            if not usr.is_access_token_valid():
+                # Replace with a token refresh
+                refresh_access_token(usr)
+
+            ytc = createYtMusic(usr.access_token, usr.refresh_token)
+            user_playlists = {}
+            new_metadata = []
+            unresolved_videos = []
+            for pl in pl_cfgs:
+                playlist = ytc.get_playlist(pl.yt_pl_id, limit=None)
+                user_playlists[playlist['id']] = playlist
+                replaceable = {}
+                pl_ids_to_media = {t['videoId']: t for t in playlist['tracks']}
+                for media in playlist['tracks']:
+                    mid = media['videoId']
+                    if mid not in yt_media_metadata:
+                        new_metadata.append(media)
+                    category = Category.SONG if media['videoType'] == 'MUSIC_VIDEO_TYPE_ATV' else Category.VIDEO
+                    media['category'] = category
+                    if category == Category.VIDEO:
+                        if (meta := yt_media_metadata.get(mid)) and meta.alt_id:
+                            replaceable[mid] = meta.alt_id
+                        else:
+                            unresolved_videos.append((media, pl, playlist))
+                if pl.vsd_replace_in_src:
+                    songs_to_add = [mid for mid in replaceable.values() if mid not in pl_ids_to_media]
+                    logger.info(f"Adding {len(songs_to_add)} replacement medias into '{playlist['title']}': {songs_to_add}")
+                    if songs_to_add:
+                        ytc.add_playlist_items(pl.yt_pl_id, songs_to_add)
+                    videos_to_remove = [pl_ids_to_media[mid] for mid in replaceable.keys()]
+                    logger.info(f"Removing {len(videos_to_remove)} videos from '{playlist['title']}': [{','.join(replaceable.keys())}]")
+                    if videos_to_remove:
+                        ytc.remove_playlist_items(pl.yt_pl_id, videos_to_remove)
+                if pl.copy:
+                    dst_playlist = ytc.get_playlist(pl.copy_dst, limit=None)
+                    dst_media_ids = {t for t in dst_playlist['tracks']}
+                    media_to_copy = set(pl_ids_to_media.keys()) - dst_media_ids
+                    if pl.vsd_replace_during_copy:
+                        songs_to_copy = {mid for mid in media_to_copy if pl_ids_to_media[mid]['category'] == Category.SONG}
+                        media_to_copy = [mid if is_song else replaceable[mid] for mid in media_to_copy if (is_song := mid in songs_to_copy) or mid in replaceable]
+                    new_media_to_copy = media_to_copy - dst_media_ids
+                    logger.info(f"Copying {len(new_media_to_copy)} medias into '{playlist['title']}': {new_media_to_copy}")
+                    ytc.add_playlist_items(pl.copy_dst, new_media_to_copy)
+                pass
+
+            # Select medias that are not in the metadata yet
+            logger.info(f"Found {len(new_metadata)} new medias in user's ({usr.yt_user_id}) playlists")
+            for media in new_metadata:
+                mm = None
+                try:
+                    artists = ', '.join(a['name'] for a in media['artists'])
+                    mm = YtMediaMetadata(
+                        id=None,
+                        yt_id=media['videoId'],
+                        title=media['title'],
+                        artist=artists,
+                        category=str(media['category']),
+                        album_name=media['album'],
+                        duration=media['duration_seconds'],
+                        views_cnt=media['views'],
+                        thumbnail_url=max(media['thumbnails'], key=lambda thn: thn['height'],
+                                          default={'url': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/300px-No_image_available.svg.png'})['url']
+                    )
+                    create_yt_media_metadata(mm)
+                except:
+                    logger.exception(f"Failed to save {mm}")
+            if unresolved_videos:
+                resolve_video_substitution([v['videoId'] for v, pl_cfg, pl_data in unresolved_videos], usr.slack_user)
