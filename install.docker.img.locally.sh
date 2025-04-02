@@ -7,12 +7,12 @@ REPO_NAME="yt2jf_playsync"
 echo Removing the existing git repo if any
 rm -rf "$REPO_NAME"
 
-echo Available versions:
 all_versions=$(git ls-remote --tags --sort='v:refname' https://github.com/serg-bloim/yt2jf_playsync.git 'v*' | cut -d/ -f3-)
+echo "Available versions:"
 echo "$all_versions"
 
-echo Latest version is:
 version=$(echo "$all_versions" | tail -n1)
+echo "Latest version is: $version"
 
 # Clone the repository
 echo "Cloning repository..."
