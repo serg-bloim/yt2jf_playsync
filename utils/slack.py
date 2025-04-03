@@ -1,11 +1,14 @@
 import os
 from collections import defaultdict
 
+import requests
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
+
+from utils.logs import create_logger
 
 __slack_bot_token__ = os.getenv('SLACK_TOKEN_XOXB')
 __slack_app_token__ = os.getenv('SLACK_TOKEN_XAPP')
@@ -14,7 +17,7 @@ __web_client__ = WebClient(token=__slack_bot_token__)
 __message_handlers__ = defaultdict(list)
 __shortcut_handlers__ = defaultdict(list)
 
-from utils.logs import create_logger
+__logger__ = create_logger('slack')
 
 
 def add_slack_interactive_message_handler(type, handler):
@@ -34,7 +37,7 @@ def __setup_slack_callback__():
     )
 
     def process(client: SocketModeClient, req: SocketModeRequest):
-        logger = create_logger('slack')
+        response = None
         if req.type == 'interactive':
             if req.payload['type'] == 'shortcut':
                 try:
@@ -42,11 +45,11 @@ def __setup_slack_callback__():
                     handlers = __shortcut_handlers__.get(sh_id, [])
                     for hdl in handlers:
                         try:
-                            hdl(req)
+                            response = hdl(req)
                         except:
-                            logger.exception("Error during shortcut handler")
+                            __logger__.exception("Error during shortcut handler")
                 except:
-                    logger.exception("Cannot get shortcut details")
+                    __logger__.exception("Cannot get shortcut details")
             elif req.payload['type'] == 'block_actions':
                 for action in req.payload['actions']:
                     try:
@@ -54,12 +57,12 @@ def __setup_slack_callback__():
                         handlers = __message_handlers__.get(type, [])
                         for hdl in handlers:
                             try:
-                                hdl(action, req)
+                                response = hdl(req, action)
                             except:
-                                logger.exception("Error during action handler")
+                                __logger__.exception("Error during action handler")
                     except:
-                        logger.exception("Cannot get action details")
-        response = SocketModeResponse(envelope_id=req.envelope_id)
+                        __logger__.exception("Cannot get action details")
+        response = response or SocketModeResponse(envelope_id=req.envelope_id)
         client.send_socket_mode_response(response)
 
     __socket_client__.socket_mode_request_listeners.append(process)
@@ -92,3 +95,8 @@ def send_ephemeral(msg, channel_id, user_id, blocks=None):
         print(f"Message sent")
     except SlackApiError as e:
         print(f"Error sending message: {e.response['error']}")
+
+
+def delete_current_message(req: SocketModeRequest):
+    resp = requests.post(req.payload['response_url'], json={'delete_original': 'true'})
+    resp.raise_for_status()

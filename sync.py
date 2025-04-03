@@ -32,7 +32,7 @@ def parse_yt_id(path, regex=load_settings().jf_extract_ytid_regex):
         return m.group()
 
 
-def process_media_metadata_mismatch(action, req):
+def process_media_metadata_mismatch(req, action):
     logger = create_logger("yt_meta_mismatch_fix")
     payload = json.loads(action['value'])
     yt_id = payload['yt_id']
@@ -51,11 +51,11 @@ def process_media_metadata_mismatch(action, req):
     pass
 
 
-def process_media_metadata_sync(action, req):
+def process_media_metadata_sync(req, action):
     sync_all_playlists()
 
 
-def process_video_replacement(action, req: SocketModeRequest):
+def process_video_replacement(req: SocketModeRequest, action):
     logger = create_logger("yt_auto.v2s")
     data = json.loads(action['selected_option']['value'])
     sid = data['sid']
@@ -65,6 +65,10 @@ def process_video_replacement(action, req: SocketModeRequest):
             mm.alt_id = sid
             save_yt_media_metadata(mm)
             logger.info(f"Associated video {mm.yt_id} {mm.title} by {mm.artist} with media {mm.alt_id}")
+            try:
+                slack.delete_current_message(req)
+            except:
+                logger.exception(f"Failed to delete video resolution message for vid: {vid} sid: {sid}")
     pass
 
 
@@ -72,19 +76,25 @@ def process_video_scan(req: SocketModeRequest):
     sub_videos_with_songs()
 
 
-def process_init_video_resolve(req: SocketModeRequest):
+def process_init_video_resolve(req: SocketModeRequest, action=None):
+    logger = create_logger("yt_auto.v2s")
     metadata = load_yt_media_metadata(alt_id=None, category='video')
     uid = req.payload['user']['id']
+    try:
+        slack.delete_current_message(req)
+    except:
+        logger.exception(f"Failed to delete a reload message")
     if metadata:
         vids = [mm.yt_id for mm in metadata]
         resolve_video_substitution(vids, uid)
     else:
-        send_ephemeral("There are no videos for replacement", '#test', uid)
+        send_ephemeral("There are no videos for replacement", SLACK_CHANNEL_DEFAULT, uid)
 
 
 add_slack_interactive_message_handler("media_metadata_mismatch", process_media_metadata_mismatch)
 add_slack_interactive_message_handler("sync_playlists", process_media_metadata_sync)
 add_slack_interactive_message_handler("video_replacement", process_video_replacement)
+add_slack_interactive_message_handler("v2s_resolve_more_videos", process_init_video_resolve)
 add_slack_shortcut_handler("vsd-init-scan", process_video_scan)
 add_slack_shortcut_handler("vsd-resolve-videos", process_init_video_resolve)
 
@@ -363,6 +373,9 @@ def update_pl_cfg_in_db():
 
 def format_vid_replacement_message(video_meta: YtMediaMetadata, song_candidates_meta: list[YtMediaMetadata]):
     def format_scaled_number(n):
+        if isinstance(n, str):
+            # If number was extracted from search result, it has a string format like '1.4B' and thus can be returned right away
+            return n
         formats = {1_000_000_000: 'B', 1_000_000: 'M', 1_000: 'K'}
         for b, s in formats.items():
             if n >= b:
@@ -454,6 +467,26 @@ def extract_meta(song_search_rec):
                            thumbnail_url=max(song_search_rec['thumbnails'], key=lambda thn: thn['height'], default={'url': ''})['url'])
 
 
+def format_resolve_video_load_more(more_vids_n):
+    return [
+        {
+            'type': 'section',
+            "text": {
+                "type": "mrkdwn",
+                "text": f"There are {more_vids_n} more videos to replace"},
+            "accessory": {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Load more videos to resolve"
+                },
+                "style": "primary",
+                "value": "123",
+                "action_id": f"v2s_resolve_more_videos"}
+        }
+    ]
+
+
 def resolve_video_substitution(vid_sub_candidates: List[str], slack_user_recipient):
     ytm = YTMusic()
     logger = create_logger("yt_auto.v2s")
@@ -475,8 +508,10 @@ def resolve_video_substitution(vid_sub_candidates: List[str], slack_user_recipie
                     if s.views_cnt is None:
                         song = ytm.get_song(s.yt_id)
                         s.views_cnt = int(get_nested_value(song, 'videoDetails', 'viewCount') or '0')
-                slack.send_ephemeral(f"123", "#test", slack_user_recipient, blocks=format_vid_replacement_message(vm, top5res))
-                pass
+                slack.send_ephemeral(f"Videos for resolution", SLACK_CHANNEL_DEFAULT, slack_user_recipient, blocks=format_vid_replacement_message(vm, top5res))
+        if (more_vids := len(vid_sub_candidates) - sample_size) > 0:
+            slack.send_ephemeral(f"Load more videos to resolve", SLACK_CHANNEL_DEFAULT, slack_user_recipient, blocks=format_resolve_video_load_more(more_vids))
+        pass
 
 
 def sub_videos_with_songs():
