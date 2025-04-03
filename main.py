@@ -36,7 +36,6 @@ def setup_db_structure():
 
 def main():
     try:
-        a = 1/0
         logger.info(f"Version: {read_version()}")
         setup_db_structure()
         logger.info(f"Starting the sync.")
