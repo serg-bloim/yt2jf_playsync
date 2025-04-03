@@ -98,6 +98,6 @@ def send_ephemeral(msg, channel_id, user_id, blocks=None):
 
 
 def delete_current_message(req: SocketModeRequest):
-    if resp_url := req.payload['response_url']:
+    if resp_url := req.payload.get('response_url'):
         resp = requests.post(resp_url, json={'delete_original': 'true'})
         resp.raise_for_status()
