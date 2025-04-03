@@ -10,7 +10,7 @@ from slack_sdk.socket_mode.request import SocketModeRequest
 from ytmusicapi import YTMusic
 
 from utils import slack
-from utils.common import get_nested_value, first
+from utils.common import get_nested_value, first, format_scaled_number
 from utils.db import load_media_mappings, load_settings, load_playlist_configs, save_playlist_config, load_local_media, \
     add_local_media, load_yt_automated_playbooks, load_yt_media_metadata, YtMediaMetadata, save_yt_media_metadata, load_guser_by_id, create_yt_media_metadata
 from utils.jf import load_all_items, find_user_by_name, load_item_by_id, save_item, load_jf_playlist, \
@@ -372,16 +372,6 @@ def update_pl_cfg_in_db():
 
 
 def format_vid_replacement_message(video_meta: YtMediaMetadata, song_candidates_meta: list[YtMediaMetadata]):
-    def format_scaled_number(n):
-        if isinstance(n, str):
-            # If number was extracted from search result, it has a string format like '1.4B' and thus can be returned right away
-            return n
-        formats = {1_000_000_000: 'B', 1_000_000: 'M', 1_000: 'K'}
-        for b, s in formats.items():
-            if n >= b:
-                return f"{n / b:.1f}{s}"
-        return str(n)
-
     def format_duration(dur_sec: int):
         min = dur_sec // 60
         sec = dur_sec % 60
@@ -408,20 +398,19 @@ def format_vid_replacement_message(video_meta: YtMediaMetadata, song_candidates_
     })
     options = []
     for i, s in enumerate(song_candidates_meta, start=1):
-        views = format_scaled_number(s.views_cnt)
         artists = s.artist
         sid = s.yt_id
         song_url = f"https://music.youtube.com/watch?v={sid}"
         short_title = s.title[:20]
         short_artists = artists[:20]
-        options.append((sid, f"{i}. {short_title} ({format_duration(s.duration)})\nby {short_artists} ({views})"))
+        options.append((sid, f"{i}. {short_title} ({format_duration(s.duration)})\nby {short_artists} ({s.views_cnt})"))
         blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
                 "text": f"""{i}. <{song_url}|{s.title}> ({format_duration(s.duration)})
      <{song_url}|{s.album_name}>
-     <{song_url}|by {artists}> {views} views"""
+     <{song_url}|by {artists}> {s.views_cnt} views"""
             },
             "accessory": {
                 "type": "image",
@@ -507,7 +496,7 @@ def resolve_video_substitution(vid_sub_candidates: List[str], slack_user_recipie
                 for s in top5res:
                     if s.views_cnt is None:
                         song = ytm.get_song(s.yt_id)
-                        s.views_cnt = int(get_nested_value(song, 'videoDetails', 'viewCount') or '0')
+                        s.views_cnt = format_scaled_number(int(get_nested_value(song, 'videoDetails', 'viewCount') or '0'))
                 slack.send_ephemeral(f"Videos for resolution", SLACK_CHANNEL_DEFAULT, slack_user_recipient, blocks=format_vid_replacement_message(vm, top5res))
         if (more_vids := len(vid_sub_candidates) - sample_size) > 0:
             slack.send_ephemeral(f"Load more videos to resolve", SLACK_CHANNEL_DEFAULT, slack_user_recipient, blocks=format_resolve_video_load_more(more_vids))

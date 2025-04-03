@@ -1,5 +1,5 @@
 from itertools import islice
-from typing import Callable, TypeVar, Iterable
+from typing import Callable, TypeVar, Iterable, Union
 
 
 def chunked(iterable, size):
@@ -31,5 +31,13 @@ class LazyProperty[T]:
         return self.__data_val
 
 
-def first(col:Iterable):
+def first(col: Iterable):
     return next(iter(col))
+
+
+def format_scaled_number(n: Union[int, float]):
+    formats = {1_000_000_000: 'B', 1_000_000: 'M', 1_000: 'K'}
+    for b, s in formats.items():
+        if n >= b:
+            return f"{n / b:.1f}{s}"
+    return str(n)

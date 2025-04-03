@@ -28,14 +28,5 @@ class MyYTTestCase(unittest.TestCase):
         vids = ytmusic.search(query, 'videos')
         pass
 
-    def test_search_id(self):
-        ytmusic = YTMusic()
-        video_id = 'tAGnKpE4NCI'
-        # video_id = 'bY3vXr7fm8k'
-        query = 'bY3vXr7fm8k'
-        songs = ytmusic.search(query, 'songs')
-        vids = ytmusic.search(query, 'videos')
-        pass
-
 if __name__ == '__main__':
     unittest.main()
