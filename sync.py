@@ -484,7 +484,7 @@ def format_resolve_video_load_more(more_vids_n):
 def resolve_video_substitution(vid_sub_candidates: List[str], slack_user_recipient):
     ytm = YTMusic()
     logger = create_logger("yt_auto.v2s")
-    metadata: dict[str, YtMediaMetadata] = {mm.yt_id: mm for mm in load_yt_media_metadata()}
+    metadata: dict[str, YtMediaMetadata] = {mm.yt_id: mm for mm in load_yt_media_metadata(alt_id=None)}
     candidates_meta = [metadata[v] for v in vid_sub_candidates if v in metadata]
     if diff := len(vid_sub_candidates) - len(candidates_meta) > 0:
         logger.warning(f"{diff} medias are not in db/metadata")
