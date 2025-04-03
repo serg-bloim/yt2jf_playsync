@@ -409,8 +409,8 @@ def format_vid_replacement_message(video_meta: YtMediaMetadata, song_candidates_
             "text": {
                 "type": "mrkdwn",
                 "text": f"""{i}. <{song_url}|{s.title}> ({format_duration(s.duration)})
-     <{song_url}|{s.album_name}>
-     <{song_url}|by {artists}> {s.views_cnt} views"""
+     <{song_url}|{s.album_name}> {s.views_cnt}
+     <{song_url}|by {artists}>"""
             },
             "accessory": {
                 "type": "image",
@@ -479,7 +479,7 @@ def format_resolve_video_load_more(more_vids_n):
 def resolve_video_substitution(vid_sub_candidates: List[str], slack_user_recipient):
     ytm = YTMusic()
     logger = create_logger("yt_auto.v2s")
-    metadata: dict[str, YtMediaMetadata] = {mm.yt_id: mm for mm in load_yt_media_metadata(alt_id=None)}
+    metadata: dict[str, YtMediaMetadata] = {mm.yt_id: mm for mm in load_yt_media_metadata()}
     candidates_meta = [metadata[v] for v in vid_sub_candidates if v in metadata]
     if diff := len(vid_sub_candidates) - len(candidates_meta) > 0:
         logger.warning(f"{diff} medias are not in db/metadata")
@@ -494,9 +494,8 @@ def resolve_video_substitution(vid_sub_candidates: List[str], slack_user_recipie
             if songs:
                 top5res = [extract_meta(s) for s in songs[:5]]
                 for s in top5res:
-                    if s.views_cnt is None:
-                        song = ytm.get_song(s.yt_id)
-                        s.views_cnt = format_scaled_number(int(get_nested_value(song, 'videoDetails', 'viewCount') or '0'))
+                    song = ytm.get_song(s.yt_id)
+                    s.views_cnt = format_scaled_number(int(get_nested_value(song, 'videoDetails', 'viewCount') or '0')) + f" / {s.views_cnt}"
                 slack.send_ephemeral(f"Videos for resolution", SLACK_CHANNEL_DEFAULT, slack_user_recipient, blocks=format_vid_replacement_message(vm, top5res))
         if (more_vids := len(vid_sub_candidates) - sample_size) > 0:
             slack.send_ephemeral(f"Load more videos to resolve", SLACK_CHANNEL_DEFAULT, slack_user_recipient, blocks=format_resolve_video_load_more(more_vids))
