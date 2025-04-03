@@ -24,6 +24,7 @@ NO_IMAGE_AVAILABLE_URL = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a
 SLACK_CHANNEL_DEFAULT = '#playsync'
 SLACK_CHANNEL_INFO = os.getenv('SLACK_CHANNEL_PLAYSYNC_INFO', SLACK_CHANNEL_DEFAULT)
 SLACK_CHANNEL_MISMATCHED_MEDIA = os.getenv('SLACK_CHANNEL_PLAYSYNC_MISMATCH_MEDIA', SLACK_CHANNEL_DEFAULT)
+SLACK_CHANNEL_V2S_LOG = os.getenv('SLACK_CHANNEL_PLAYSYNC_V2S_LOGGING', '#v2s_logging')
 
 
 def parse_yt_id(path, regex=load_settings().jf_extract_ytid_regex):
@@ -69,6 +70,10 @@ def process_video_replacement(req: SocketModeRequest, action):
                 slack.delete_current_message(req)
             except:
                 logger.exception(f"Failed to delete video resolution message for vid: {vid} sid: {sid}")
+            try:
+                slack.send_message(f"Video {vid} got a replacement song {sid}", SLACK_CHANNEL_V2S_LOG)
+            except:
+                logger.exception(f"Failed to slack log video replacement: {vid} --> {sid}")
     pass
 
 
