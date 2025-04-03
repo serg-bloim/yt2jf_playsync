@@ -74,6 +74,7 @@ class YtMediaMetadata:
 class YtAutomatedPlaylist:
     yt_pl_id: str
     yt_user: str
+    enabled:bool = False
     vsd_replace_in_src: bool = False
     vsd_replace_during_copy: bool = False
     copy: bool = False

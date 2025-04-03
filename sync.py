@@ -402,50 +402,57 @@ def format_vid_replacement_message(video_meta: YtMediaMetadata, song_candidates_
         }
     })
     options = []
-    for i, s in enumerate(song_candidates_meta, start=1):
-        artists = s.artist
-        sid = s.yt_id
-        song_url = f"https://music.youtube.com/watch?v={sid}"
-        short_title = s.title[:20]
-        short_artists = artists[:20]
-        options.append((sid, f"{i}. {short_title} ({format_duration(s.duration)})\nby {short_artists} ({s.views_cnt})"))
+    if song_candidates_meta:
+        for i, s in enumerate(song_candidates_meta, start=1):
+            artists = s.artist
+            sid = s.yt_id
+            song_url = f"https://music.youtube.com/watch?v={sid}"
+            short_title = s.title[:20]
+            short_artists = artists[:20]
+            options.append((sid, f"{i}. {short_title} ({format_duration(s.duration)})\nby {short_artists} ({s.views_cnt})"))
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"""{i}. <{song_url}|{s.title}> ({format_duration(s.duration)})
+         <{song_url}|{s.album_name}> {s.views_cnt}
+         <{song_url}|by {artists}>"""
+                },
+                "accessory": {
+                    "type": "image",
+                    "image_url": s.thumbnail_url or NO_IMAGE_AVAILABLE_URL,
+                    "alt_text": "yt thumbnail"
+                }
+            })
+            # print(f"Candidate: {s['title']} - {artists} ({views} views) https://music.youtube.com/watch?v={sid}  Thumbnail: {pick_thumbnail(s['thumbnails'])}")
+
         blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"""{i}. <{song_url}|{s.title}> ({format_duration(s.duration)})
-     <{song_url}|{s.album_name}> {s.views_cnt}
-     <{song_url}|by {artists}>"""
+                "text": "Select a replacement"
             },
             "accessory": {
-                "type": "image",
-                "image_url": s.thumbnail_url or NO_IMAGE_AVAILABLE_URL,
-                "alt_text": "yt thumbnail"
+                "type": "overflow",
+                "options": [{
+                    "text": {
+                        "type": "plain_text",
+                        "text": opt
+                    },
+                    "value": json.dumps({
+                        'vid': video_meta.yt_id,
+                        'sid': sid
+                    })
+                } for sid, opt in options],
+                "action_id": f"video_replacement"
             }
         })
-        # print(f"Candidate: {s['title']} - {artists} ({views} views) https://music.youtube.com/watch?v={sid}  Thumbnail: {pick_thumbnail(s['thumbnails'])}")
-
-    blocks.append({
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": "Select a replacement"
-        },
-        "accessory": {
-            "type": "overflow",
-            "options": [{
-                "text": {
-                    "type": "plain_text",
-                    "text": opt
-                },
-                "value": json.dumps({
-                    'vid': video_meta.yt_id,
-                    'sid': sid
-                })
-            } for sid, opt in options],
-            "action_id": f"video_replacement"
-        }
-    })
+    else:
+        blocks.append({"type": "section",
+                       "text": {
+                           "type": "mrkdwn",
+                           "text": "No songs found for the video"
+                       }})
     return blocks
 
 
@@ -496,12 +503,11 @@ def resolve_video_substitution(vid_sub_candidates: List[str], slack_user_recipie
             query = f"{vm.title} {vm.artist}"
             logger.debug(f"Searching for [{query}] videoId='{vm.yt_id}'")
             songs = ytm.search(query, 'songs')
-            if songs:
-                top5res = [extract_meta(s) for s in songs[:5]]
-                for s in top5res:
-                    song = ytm.get_song(s.yt_id)
-                    s.views_cnt = format_scaled_number(int(get_nested_value(song, 'videoDetails', 'viewCount') or '0')) + f" / {s.views_cnt}"
-                slack.send_ephemeral(f"Videos for resolution", SLACK_CHANNEL_DEFAULT, slack_user_recipient, blocks=format_vid_replacement_message(vm, top5res))
+            top5res = [extract_meta(s) for s in songs[:5]]
+            for s in top5res:
+                song = ytm.get_song(s.yt_id)
+                s.views_cnt = format_scaled_number(int(get_nested_value(song, 'videoDetails', 'viewCount') or '0')) + f" / {s.views_cnt}"
+            slack.send_ephemeral(f"Videos for resolution", SLACK_CHANNEL_DEFAULT, slack_user_recipient, blocks=format_vid_replacement_message(vm, top5res))
         if (more_vids := len(vid_sub_candidates) - sample_size) > 0:
             slack.send_ephemeral(f"Load more videos to resolve", SLACK_CHANNEL_DEFAULT, slack_user_recipient, blocks=format_resolve_video_load_more(more_vids))
         pass
@@ -511,7 +517,7 @@ def sub_videos_with_songs():
     logger = create_logger("yt_auto.v2s")
     guser_id = os.getenv('GOOGLE_USER_ID')
     usr = load_guser_by_id(guser_id)
-    pl_cfgs = [pl for pl in load_yt_automated_playbooks() if pl.yt_user == usr.yt_user_id and (pl.vsd_replace_in_src or pl.vsd_replace_during_copy or pl.copy)]
+    pl_cfgs = [pl for pl in load_yt_automated_playbooks() if pl.yt_user == usr.yt_user_id and pl.enabled]
     yt_media_metadata = {mm.yt_id: mm for mm in load_yt_media_metadata()}
     if pl_cfgs:
         if usr.is_refresh_token_valid():
@@ -550,14 +556,15 @@ def sub_videos_with_songs():
                         ytc.remove_playlist_items(pl.yt_pl_id, videos_to_remove)
                 if pl.copy:
                     dst_playlist = ytc.get_playlist(pl.copy_dst, limit=None)
-                    dst_media_ids = {t for t in dst_playlist['tracks']}
-                    media_to_copy = set(pl_ids_to_media.keys()) - dst_media_ids
+                    dst_media_ids = {t['videoId'] for t in dst_playlist['tracks']}
+                    media_to_copy = set(pl_ids_to_media.keys())
                     if pl.vsd_replace_during_copy:
                         songs_to_copy = {mid for mid in media_to_copy if pl_ids_to_media[mid]['category'] == Category.SONG}
-                        media_to_copy = [mid if is_song else replaceable[mid] for mid in media_to_copy if (is_song := mid in songs_to_copy) or mid in replaceable]
+                        media_to_copy = songs_to_copy | set(replaceable.values())
                     new_media_to_copy = media_to_copy - dst_media_ids
                     logger.info(f"Copying {len(new_media_to_copy)} medias into '{playlist['title']}': {new_media_to_copy}")
-                    ytc.add_playlist_items(pl.copy_dst, new_media_to_copy)
+                    if new_media_to_copy:
+                        ytc.add_playlist_items(pl.copy_dst, new_media_to_copy)
                 pass
 
             # Select medias that are not in the metadata yet

@@ -26,8 +26,23 @@ logger = create_logger("main")
 class MyTestCase(unittest.TestCase):
     def test_replace_1_song(self):
         sync.SLACK_CHANNEL_DEFAULT = '#test'
-        resolve_video_substitution(['23g5HBOg3Ic'], 'UFZPMKLKC')
+        resolve_video_substitution(['vEN3mQ0ql30', 'pIf2zL6aCig', 'YFwhijwNShw'], 'UFZPMKLKC')
 
+    def test_run_video_scan(self):
+        sub_videos_with_songs()
+
+    def test_remove_all_vids_from_pl(self):
+        pl_id = 'PL8xOIxSY5muDGvaFgcV71sADRgxOZtOG7'
+        guser_id = os.getenv('GOOGLE_USER_ID')
+        usr = load_guser_by_id(guser_id)
+        ytc = createYtMusic(usr.access_token, usr.refresh_token)
+        playlist = ytc.get_playlist(pl_id, limit=None)
+        tracks = playlist['tracks']
+        videos = [t for t in tracks if t['videoType'] != 'MUSIC_VIDEO_TYPE_ATV']
+        print(f"Removing {len(videos)} videos")
+        print('\n'.join([f"{v['title']}" for v in videos]))
+        if videos:
+            ytc.remove_playlist_items(pl_id, videos)
 
 if __name__ == '__main__':
     unittest.main()
