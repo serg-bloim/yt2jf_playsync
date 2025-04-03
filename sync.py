@@ -451,14 +451,14 @@ def format_vid_replacement_message(video_meta: YtMediaMetadata, song_candidates_
 
 def extract_meta(song_search_rec):
     return YtMediaMetadata(id='',
-                           yt_id=song_search_rec['videoId'],
-                           title=song_search_rec['title'],
-                           artist=', '.join(a['name'] for a in song_search_rec['artists']),
-                           category=song_search_rec['resultType'],
-                           album_name=song_search_rec['album']['name'],
-                           duration=song_search_rec['duration_seconds'],
+                           yt_id=song_search_rec.get('videoId'),
+                           title=song_search_rec.get('title'),
+                           artist=', '.join(a['name'] for a in song_search_rec.get('artists') or []),
+                           category=song_search_rec.get('resultType'),
+                           album_name=get_nested_value(song_search_rec, 'album', 'name') or 'NO_ALBUM',
+                           duration=song_search_rec.get('duration_seconds') or 0,
                            views_cnt=song_search_rec.get('views'),
-                           thumbnail_url=max(song_search_rec['thumbnails'], key=lambda thn: thn['height'], default={'url': ''})['url'])
+                           thumbnail_url=max(song_search_rec.get('thumbnails') or {'height': 0, 'url': ''}, key=lambda thn: thn['height'])['url'])
 
 
 def format_resolve_video_load_more(more_vids_n):
