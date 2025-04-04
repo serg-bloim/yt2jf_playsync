@@ -492,7 +492,7 @@ def resolve_video_substitution(vid_sub_candidates: List[str], slack_user_recipie
     ytm = YTMusic()
     logger = create_logger("yt_auto.v2s")
     metadata: dict[str, YtMediaMetadata] = {mm.yt_id: mm for mm in load_yt_media_metadata(alt_id=None)}
-    candidates_meta = [metadata[v] for v in vid_sub_candidates if v in metadata]
+    candidates_meta = [meta for v in vid_sub_candidates if (meta := metadata.get(v)) and not meta.ignore]
     if diff := len(vid_sub_candidates) - len(candidates_meta) > 0:
         logger.warning(f"{diff} medias are not in db/metadata")
     if candidates_meta:

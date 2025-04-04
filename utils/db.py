@@ -67,6 +67,7 @@ class YtMediaMetadata:
     views_cnt: int = 0
     thumbnail_url: str = ''
     alt_id: str = None
+    ignore:bool = False
     col_name = 'yt_media_metadata'
 
 
