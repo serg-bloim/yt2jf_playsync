@@ -1,3 +1,4 @@
+from collections import defaultdict
 from itertools import islice
 from typing import Callable, TypeVar, Iterable, Union
 
@@ -17,6 +18,7 @@ def get_nested_value(d, *keys):
 
 
 T = TypeVar('T')
+V = ('V')
 
 
 class LazyProperty[T]:
@@ -41,3 +43,11 @@ def format_scaled_number(n: Union[int, float]):
         if n >= b:
             return f"{n / b:.1f}{s}"
     return str(n)
+
+
+def group_by(seq: Iterable[T], key: Callable[[T], V]) -> dict[V, list[T]]:
+    grps = defaultdict(list)
+    for v in seq:
+        k = key(v)
+        grps[k].append(v)
+    return dict(grps)

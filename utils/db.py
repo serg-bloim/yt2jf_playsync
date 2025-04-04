@@ -7,7 +7,7 @@ from dataclasses import field
 from datetime import datetime
 from enum import Enum, auto
 from functools import lru_cache
-from typing import List, Tuple
+from typing import List, Tuple, TypeVar
 
 import requests
 
@@ -67,7 +67,7 @@ class YtMediaMetadata:
     views_cnt: int = 0
     thumbnail_url: str = ''
     alt_id: str = None
-    ignore:bool = False
+    ignore: bool = False
     col_name = 'yt_media_metadata'
 
 
@@ -75,7 +75,7 @@ class YtMediaMetadata:
 class YtAutomatedPlaylist:
     yt_pl_id: str
     yt_user: str
-    enabled:bool = False
+    enabled: bool = False
     vsd_replace_in_src: bool = False
     vsd_replace_during_copy: bool = False
     copy: bool = False
@@ -380,6 +380,21 @@ def load_yt_automated_playbooks(allowed_fields=calc_allowed_fields(YtAutomatedPl
     url = f"{__config.url}/api/collections/{YtAutomatedPlaylist.col_name}/records"
     recs = load_all_paged_records(url)
     items = [YtAutomatedPlaylist(**filter_fields(pl, allowed_fields)) for pl in recs]
+    return items
+
+
+def load_gusers(allowed_fields=calc_allowed_fields(GUser)) -> list[GUser]:
+    return load_all_db_objects(GUser)
+
+
+T = TypeVar('T')
+
+
+def load_all_db_objects(db_clazz: type[T]) -> list[T]:
+    allowed_fields = calc_allowed_fields(db_clazz)
+    url = f"{__config.url}/api/collections/{db_clazz.col_name}/records"
+    recs = load_all_paged_records(url)
+    items = [db_clazz(**filter_fields(pl, allowed_fields)) for pl in recs]
     return items
 
 
