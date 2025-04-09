@@ -1,5 +1,7 @@
 from collections import defaultdict
+from functools import cache
 from itertools import islice
+from pathlib import Path
 from typing import Callable, TypeVar, Iterable, Union
 
 
@@ -51,3 +53,10 @@ def group_by(seq: Iterable[T], key: Callable[[T], V]) -> dict[V, list[T]]:
         k = key(v)
         grps[k].append(v)
     return dict(grps)
+
+@cache
+def root_dir():
+    d = Path.cwd()
+    while not d.joinpath("root.txt").exists():
+        d = d.parent
+    return d

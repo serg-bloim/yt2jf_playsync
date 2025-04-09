@@ -1,24 +1,16 @@
-import json
 import os
-import re
-import threading
 import unittest
-from threading import Event
 
-import yt_dlp
-from pyyoutube import Client
-from slack_sdk.socket_mode.request import SocketModeRequest
+import docker
 
 import sync
-from sync import parse_yt_id, sync_all_playlists, sub_videos_with_songs, sync_playlist, resolve_video_substitution, SLACK_CHANNEL_DEFAULT
-from utils import slack, db, jf
-from utils.common import first, get_nested_value
-from utils.db import load_playlist_configs, load_media_mappings, load_settings, PlaylistConfigResp, load_local_media, load_guser_by_id, load_yt_automated_playbooks
-from utils.jf import load_jf_playlist, find_user_by_name, load_all_items, load_item_by_id, save_item, \
-    add_media_ids_to_playlist
+from sync import sub_videos_with_songs, resolve_video_substitution
+from utils import db, jf
+from utils.common import get_nested_value
+from utils.db import load_settings, load_guser_by_id
+from utils.jf import find_user_by_name
 from utils.logs import create_logger
-from utils.web import run_auth_server
-from utils.ytm import load_flat_playlist, createYtMusic, Category, refresh_access_token
+from utils.ytm import createYtMusic, Category, refresh_access_token
 
 logger = create_logger("main")
 
@@ -92,6 +84,15 @@ class MyTestCase(unittest.TestCase):
         for vid in vids:
             resp = jf.__session__.delete(f"{jf.__jf_url__}/Items/{vid}")
             resp.raise_for_status()
+
+
+    def test_docker(self):
+        current_ctx = docker.context.Context.load_context(docker.context.api.get_current_context_name())
+        url = current_ctx.endpoints["docker"]["Host"]
+        client = docker.DockerClient(base_url=url)
+        out = client.containers.run("bash", "echo 555", remove=True)
+        print(out)
+
 
 if __name__ == '__main__':
     unittest.main()

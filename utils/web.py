@@ -6,17 +6,20 @@ from ssl import SSLContext
 from urllib.parse import urlparse
 from pyyoutube import Client, Api
 
-from utils.common import first
+from utils.common import first, root_dir
 
 
 def run_auth_server(client: Client):
+    token_resp = None
     class MyHandler(SimpleHTTPRequestHandler):
         def do_GET(self):
+            nonlocal token_resp
             try:
                 redirect_uri = 'https://localhost:1234'
                 response_url = redirect_uri + self.path
                 qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 token = client.generate_access_token(authorization_response=response_url, redirect_uri=redirect_uri + '/abc', state=first(qs['state']))
+                token_resp = token
                 try:
                     api = Api(client_id=client.client_id, client_secret=client.client_secret, access_token=client.access_token)
                     profile = api.get_profile(client.access_token)
@@ -58,6 +61,8 @@ def run_auth_server(client: Client):
     server_address = ("0.0.0.0", PORT)
     httpd = HTTPServer(server_address, MyHandler)
     ssl_context = SSLContext()
-    ssl_context.load_cert_chain('test/cert.pem', 'test/key.pem')
+    ssl_context.load_cert_chain(root_dir() /'test/cert/cert.pem', root_dir() / 'test/cert/key.pem')
     httpd.socket = ssl_context.wrap_socket(httpd.socket, server_side=True)
     httpd.serve_forever()
+    pass
+    return token_resp
