@@ -3,9 +3,8 @@ import json
 import os
 import random
 import re
-from collections.abc import Callable
 from dataclasses import replace
-from typing import List, Any
+from typing import List
 
 from slack_sdk.socket_mode.request import SocketModeRequest
 from ytmusicapi import YTMusic
@@ -13,7 +12,7 @@ from ytmusicapi import YTMusic
 from utils import slack
 from utils.common import get_nested_value, first, format_scaled_number, group_by
 from utils.db import load_media_mappings, load_settings, load_playlist_configs, save_playlist_config, load_local_media, \
-    add_local_media, load_yt_automated_playbooks, load_yt_media_metadata, YtMediaMetadata, save_yt_media_metadata, load_guser_by_id, create_yt_media_metadata, YtAutomatedPlaylist
+    add_local_media, load_yt_automated_playbooks, load_yt_media_metadata, YtMediaMetadata, save_yt_media_metadata, load_guser_by_id, create_yt_media_metadata
 from utils.jf import load_all_items, find_user_by_name, load_item_by_id, save_item, load_jf_playlist, \
     add_media_ids_to_playlist, create_playlist, get_jf_base_url
 from utils.logs import create_logger
@@ -28,7 +27,9 @@ SLACK_CHANNEL_MISMATCHED_MEDIA = os.getenv('SLACK_CHANNEL_PLAYSYNC_MISMATCH_MEDI
 SLACK_CHANNEL_V2S_LOG = os.getenv('SLACK_CHANNEL_PLAYSYNC_V2S_LOGGING', '#v2s_logging')
 
 
-def parse_yt_id(path, regex=load_settings().jf_extract_ytid_regex):
+def parse_yt_id(path, regex=None):
+    if regex is None:
+        regex = load_settings().jf_extract_ytid_regex
     m = re.search(regex, path)
     if m:
         return m.group()

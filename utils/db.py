@@ -6,7 +6,7 @@ from dataclasses import asdict
 from dataclasses import field
 from datetime import datetime
 from enum import Enum, auto
-from functools import lru_cache
+from functools import lru_cache, cache
 from typing import List, Tuple, TypeVar
 
 import requests
@@ -35,6 +35,7 @@ class PlaylistConfigResp:
     ytm_pl_name: str
     jf_user_name: str
     sync: bool
+    col_name = 'playlist_config'
 
 
 @dataclasses.dataclass
@@ -121,7 +122,7 @@ LocalMediaArchive_allowed_fields = calc_allowed_fields(LocalMediaArchive)
 logger = create_logger("db")
 
 
-@lru_cache(maxsize=1)
+@cache
 def db_auth():
     logger.info("Authenticating")
     url = f"{__config.url}/api/collections/{__config.auth_collection}/auth-with-password"
@@ -136,8 +137,11 @@ def db_auth():
         logger.error(f"Failed to authenticate. Status: {response.status_code}, Response:{response.json()}")
 
 
-__db_session = requests.session()
-__db_session.headers.update({'Authorization': db_auth()})
+@cache
+def get_db_session():
+    session = requests.session()
+    session.headers.update({'Authorization': db_auth()})
+    return session
 
 
 def std_fields():
@@ -165,7 +169,7 @@ def std_fields():
 
 def set_setting_if_absent(key, val):
     url = f"{__config.url}/api/collections/yt_sync_settings/records"
-    resp = __db_session.post(url, data={'key': key, 'val': val})
+    resp = get_db_session().post(url, data={'key': key, 'val': val})
     http_code = resp.status_code
     if resp:
         logger.debug(f"Added setting '{key}={val}'")
@@ -196,7 +200,7 @@ def create_db_structure():
             'updateRule': update_rule,
             'deleteRule': delete_rule,
         }
-        resp = __db_session.post(f"{__config.url}/api/collections", json=dscr)
+        resp = get_db_session().post(f"{__config.url}/api/collections", json=dscr)
         if resp:
             return resp.json()
         elif resp.status_code == 400 and get_nested_value(resp.json(), 'data', 'name',
@@ -241,17 +245,22 @@ def create_db_structure():
     for model in models:
         create_collection(model.col_name, parse_dataclass(model))
 
-    set_setting_if_absent('pf2jf_path_conv_search', os.getenv('DEFAULT_PF2JF_PATH_CONV_SEARCH'))
-    set_setting_if_absent('pf2jf_path_conv_replace', os.getenv('DEFAULT_PF2JF_PATH_CONV_REPLACE'))
-    set_setting_if_absent('jf_user_name', os.getenv('DEFAULT_JF_USER_NAME'))
-    set_setting_if_absent('wait_time', os.getenv('DEFAULT_WAIT_TIME', '24h'))
-    set_setting_if_absent('last_local_media_update_ts', 0)
+    def_settings = Settings(
+        pf2jf_path_conv_search=os.getenv('DEFAULT_PF2JF_PATH_CONV_SEARCH'),
+        pf2jf_path_conv_replace=os.getenv('DEFAULT_PF2JF_PATH_CONV_REPLACE'),
+        jf_extract_ytid_regex=os.getenv('DEFAULT_PF2JF_YTID_REGEX'),
+        jf_user_name=os.getenv('DEFAULT_JF_USER_NAME'),
+        wait_time=os.getenv('DEFAULT_WAIT_TIME', '24h'),
+        last_local_media_update_ts=0,
+    )
+    for key, val in asdict(def_settings).items():
+        set_setting_if_absent(key, val)
 
 
-@lru_cache(maxsize=1)
+@cache
 def load_playlist_configs():
     url = f"{__config.url}/api/collections/playlist_config/records"
-    response = __db_session.get(url)
+    response = get_db_session().get(url)
     if response:
         return [PlaylistConfigResp(**{k: v for k, v in pl.items() if k in PlaylistResp_allowed_fields}) for pl in
                 response.json()['items']]
@@ -259,14 +268,14 @@ def load_playlist_configs():
 
 def save_playlist_config(pl_config: PlaylistConfigResp):
     url = f"{__config.url}/api/collections/playlist_config/records/{pl_config.id}"
-    response = __db_session.patch(url, json=asdict(pl_config))
+    response = get_db_session().patch(url, json=asdict(pl_config))
     response.raise_for_status()
 
 
 def load_all_paged_records(url, filter=None):
     def load_page(page_n=1):
         params = {"page": page_n, "perPage": 100, "filter": filter}
-        response = __db_session.get(url, params=params)
+        response = get_db_session().get(url, params=params)
         if response:
             json = response.json()
             return json['items'], json['page'], json['totalPages'], json['totalItems']
@@ -288,7 +297,7 @@ def load_media_mappings():
 
 def delete_mapping(mapping: MediaMappingResp):
     url = f"{__config.url}/api/collections/yt_media_mapping/records/{mapping.id}"
-    response = __db_session.delete(url)
+    response = get_db_session().delete(url)
     response.raise_for_status()
 
 
@@ -302,10 +311,10 @@ class Settings:
     last_local_media_update_ts: int = 0
 
 
-@lru_cache(maxsize=1)
+@cache
 def load_settings():
     url = f"{__config.url}/api/collections/yt_sync_settings/records"
-    response = __db_session.get(url)
+    response = get_db_session().get(url)
     allowed_fields = {field.name for field in dataclasses.fields(Settings)}
     if response:
         data = {entry['key']: entry['val'] for entry in response.json()['items']}
@@ -325,7 +334,7 @@ def add_local_media(items: List[dict]):
     url = f"{__config.url}/api/collections/local_media_archive/records"
     for itm in items:
         try:
-            resp = __db_session.post(url, data={'jf_id': itm['Id'], 'local_path': itm.get('Path'), 'exists': True})
+            resp = get_db_session().post(url, data={'jf_id': itm['Id'], 'local_path': itm.get('Path'), 'exists': True})
             http_code = resp.status_code
             if resp:
                 logger.debug(f"Added LocalMediaArchive '{itm['Id']}/{itm['Name']}'")
@@ -355,7 +364,7 @@ def load_yt_media_metadata(allowed_fields=calc_allowed_fields(YtMediaMetadata), 
 def create_yt_media_metadata(media_metadata: YtMediaMetadata) -> CreateOpResult:
     url = f"{__config.url}/api/collections/yt_media_metadata/records"
     try:
-        resp = __db_session.post(url, data=asdict(media_metadata))
+        resp = get_db_session().post(url, data=asdict(media_metadata))
         http_code = resp.status_code
         if resp:
             logger.debug(f"Added YtMediaMetadata '{media_metadata.yt_id}/{media_metadata.title}'")
@@ -372,7 +381,7 @@ def create_yt_media_metadata(media_metadata: YtMediaMetadata) -> CreateOpResult:
 
 def save_yt_media_metadata(mm: YtMediaMetadata):
     url = f"{__config.url}/api/collections/{mm.col_name}/records/{mm.id}"
-    response = __db_session.patch(url, json=asdict(mm))
+    response = get_db_session().patch(url, json=asdict(mm))
     response.raise_for_status()
 
 
@@ -401,7 +410,7 @@ def load_all_db_objects(db_clazz: type[T]) -> list[T]:
 def load_guser_by_id(guid: str, allowed_fields=calc_allowed_fields(GUser)) -> GUser:
     url = f"{__config.url}/api/collections/{GUser.col_name}/records"
     params = {'filter': f"yt_user_id='{guid}'"}
-    resp = __db_session.get(url, params=params)
+    resp = get_db_session().get(url, params=params)
     if resp.status_code == 200:
         items = resp.json()['items']
         if len(items) == 1:
@@ -411,7 +420,7 @@ def load_guser_by_id(guid: str, allowed_fields=calc_allowed_fields(GUser)) -> GU
 
 def save_guser(user: GUser):
     url = f"{__config.url}/api/collections/{user.col_name}/records/{user.id}"
-    response = __db_session.patch(url, json=asdict(user))
+    response = get_db_session().patch(url, json=asdict(user))
     response.raise_for_status()
 
 

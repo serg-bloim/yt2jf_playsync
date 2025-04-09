@@ -10,10 +10,21 @@ client = JellyfinClient()
 import requests
 
 __session__ = requests.Session()
-__session__.headers.update({"X-Emby-Token": "c01d7abab8e84d128ad101753a41dead"})
+__session__.headers.update({"X-Emby-Token": os.getenv('JELLYFIN_APIKEY')})
 __jf_external_url__ = os.getenv('JELLYFIN_PUBLIC_URL')
 __jf_url__ = os.getenv('JELLYFIN_LOCAL_URL') or __jf_external_url__
 logger = create_logger("jellyfin_client")
+
+
+def get_user_session(username, password):
+    auth_resp = __session__.post(f"{__jf_url__}/Users/AuthenticateByName", json={"Username": username, "Pw": password})
+    if auth_resp.status_code == 200:
+        access_token = auth_resp.json()['AccessToken']
+        user_session = requests.Session()
+        user_session.headers.update({'X-Emby-Token': access_token})
+        return user_session
+    logger.error(f"Cannot create a user session for '{username}', status: {auth_resp.status_code}")
+    auth_resp.raise_for_status()
 
 
 def get_jf_base_url():
