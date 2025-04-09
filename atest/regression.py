@@ -9,16 +9,17 @@ from ytmusicapi import YTMusic
 import atest
 import sync
 from atest.config import Config
-from atest.helpers import create_db_container, populate_db, check_yt_token, insert
+from atest.helpers import create_db_container, populate_db, check_yt_token, is_song, create_automated_playlist_cfg, insert, truncate_collection
 from sync import sub_videos_with_songs
 from utils import db
-from utils.db import YtAutomatedPlaylist, load_yt_automated_playbooks, load_yt_media_metadata
+from utils.db import load_yt_media_metadata, YtMediaMetadata
 from utils.ytm import createYtMusic
 
 docker_client: DockerClient
 db_container: Container
 
 atest.update_envvar()
+
 
 def yt_plailist_set_items(ytc: YTMusic, pl_id: str, item_ids: Iterable[str]):
     item_ids = set(item_ids)
@@ -45,6 +46,9 @@ def yt_playlists():
     pl_dst_id = Config.Playlists.yt_dst_id
     yt_plailist_set_items(ytc, pl_src_id, src_items_to_add)
     yt_plailist_set_items(ytc, pl_dst_id, [])
+    truncate_collection(YtMediaMetadata)
+    mm = YtMediaMetadata(id=None, yt_id=src_video1_id, title='Test Title', artist='Test artist', category='video', album_name='Test album', duration=123, alt_id='BUWiEPJCbjs', ignore=False)
+    insert(mm)
     yield src_items_to_add, pl_src_id, pl_dst_id
 
 
@@ -71,17 +75,8 @@ def teardown_module(module):
 
 
 def test_yt_copy_to_playlist_no_replace(yt_playlists):
-    assert len(load_yt_automated_playbooks()) == 0
-    pl = YtAutomatedPlaylist(yt_pl_id=Config.Playlists.yt_src_id,
-                             yt_user=Config.TestUser.google_user,
-                             enabled=True,
-                             vsd_replace_in_src=False,
-                             vsd_replace_during_copy=False,
-                             copy=True,
-                             copy_dst=Config.Playlists.yt_dst_id,
-                             comment="atest copying from test_1 to test_2")
+    create_automated_playlist_cfg(truncate=True)
     src_ids, src_id, dst_id = yt_playlists
-    insert(pl)
     sub_videos_with_songs()
     ytm = createYtMusic(Config.google_token.access_token, Config.google_token.refresh_token)
     pl_src = ytm.get_playlist(src_id)
@@ -90,3 +85,39 @@ def test_yt_copy_to_playlist_no_replace(yt_playlists):
     assert set(src_ids) == set(t['videoId'] for t in pl_dst['tracks'])
     assert set(src_ids).issubset(set(mm.yt_id for mm in load_yt_media_metadata()))
 
+
+def test_yt_copy_to_playlist_songs_and_converted_videos(yt_playlists):
+    create_automated_playlist_cfg(vsd_replace_during_copy=True, truncate=True)
+    src_ids, src_id, dst_id = yt_playlists
+    ytm = createYtMusic(Config.google_token.access_token, Config.google_token.refresh_token)
+    pl_src_original = ytm.get_playlist(src_id)
+    songs = {t['videoId'] for t in pl_src_original['tracks'] if is_song(t)}
+    src_videos = {t['videoId'] for t in pl_src_original['tracks'] if not is_song(t)}
+    sub_videos_with_songs()
+    pl_src = ytm.get_playlist(src_id)
+    pl_dst = ytm.get_playlist(dst_id)
+    # Src playlist got unchanged
+    assert [t['videoId'] for t in pl_src['tracks']] == [t['videoId'] for t in pl_src_original['tracks']]
+    # Dst playlist got only songs and converted videos from Src
+    converted_vids = {mm.alt_id for mm in load_yt_media_metadata() if mm.yt_id in src_videos and mm.alt_id}
+    expected = songs.union(converted_vids)
+    assert expected == {t['videoId'] for t in pl_dst['tracks']}
+
+
+def test_yt_copy_to_playlist_replace_in_src(yt_playlists):
+    create_automated_playlist_cfg(vsd_replace_during_copy=True, vsd_replace_in_src=True, truncate=True)
+    src_ids, src_id, dst_id = yt_playlists
+    ytm = createYtMusic(Config.google_token.access_token, Config.google_token.refresh_token)
+    pl_src_original = ytm.get_playlist(src_id)
+    songs = {t['videoId'] for t in pl_src_original['tracks'] if is_song(t)}
+    src_videos = {t['videoId'] for t in pl_src_original['tracks'] if not is_song(t)}
+    sub_videos_with_songs()
+    pl_src = ytm.get_playlist(src_id)
+    pl_dst = ytm.get_playlist(dst_id)
+    converted_vids = {mm.yt_id:mm.alt_id for mm in load_yt_media_metadata() if mm.yt_id in src_videos and mm.alt_id}
+    # Src playlist got possible videos replaced
+    expected_src = songs.union(src_videos).union(converted_vids.values()).difference(converted_vids.keys())
+    # Dst playlist got only songs and converted videos from Src
+    expected_dst = songs.union(converted_vids.values())
+    assert expected_src == {t['videoId'] for t in pl_src['tracks']}
+    assert expected_dst == {t['videoId'] for t in pl_dst['tracks']}

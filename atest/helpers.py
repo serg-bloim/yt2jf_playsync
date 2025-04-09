@@ -10,7 +10,7 @@ from pyyoutube import Client
 
 from atest.config import Config
 from utils.common import root_dir
-from utils.db import GUser, get_db_session
+from utils.db import GUser, get_db_session, YtAutomatedPlaylist, load_yt_automated_playbooks
 
 
 def create_db_container(docker_client):
@@ -28,7 +28,9 @@ def create_db_container(docker_client):
         return True
 
     sleep(1)
-    waiting.wait(predicate, expected_exceptions=requests.exceptions.ConnectionError, timeout_seconds=10)
+    waiting.wait(predicate,
+                 expected_exceptions=requests.exceptions.ConnectionError,
+                 timeout_seconds=20)
     sleep(1)
     code, out = db_container.exec_run(
         f'/bin/pocketbase --dir /exia/pocketbase --hooksDir /exia/pocketbase_hooks --publicDir /exia/pocketbase_public superuser upsert {Config.PocketBase.username} {Config.PocketBase.password}')
@@ -54,6 +56,9 @@ def insert(obj):
     resp = get_db_session().post(url, json=asdict(obj))
     resp.raise_for_status()
 
+def truncate_collection(clazz):
+    resp = get_db_session().delete(f"{Config.PocketBase.url}/api/collections/{clazz.col_name}/truncate")
+    resp.raise_for_status()
 
 def check_yt_token():
     refresh = True
@@ -75,3 +80,21 @@ def refresh_access_token():
     Config.google_token.access_token = token_upd.access_token
     with open(root_dir() / 'atest/token.json', 'w') as f:
         json.dump(asdict(Config.google_token), f, indent=2)
+
+def is_song(track):
+    return track['videoType'] == 'MUSIC_VIDEO_TYPE_ATV'
+
+
+def create_automated_playlist_cfg(vsd_replace_in_src=False, vsd_replace_during_copy=False, enabled=True, copy=True, truncate=True):
+    if truncate:
+        truncate_collection(YtAutomatedPlaylist)
+        assert len(load_yt_automated_playbooks()) == 0
+    pl = YtAutomatedPlaylist(yt_pl_id=Config.Playlists.yt_src_id,
+                             yt_user=Config.TestUser.google_user,
+                             enabled=enabled,
+                             vsd_replace_in_src=vsd_replace_in_src,
+                             vsd_replace_during_copy=vsd_replace_during_copy,
+                             copy=copy,
+                             copy_dst=Config.Playlists.yt_dst_id,
+                             comment="atest copying from test_1 to test_2")
+    insert(pl)
