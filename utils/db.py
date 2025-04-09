@@ -121,7 +121,7 @@ LocalMediaArchive_allowed_fields = calc_allowed_fields(LocalMediaArchive)
 logger = create_logger("db")
 
 
-@lru_cache(maxsize=1)
+@cache
 def db_auth():
     logger.info("Authenticating")
     url = f"{__config.url}/api/collections/{__config.auth_collection}/auth-with-password"
@@ -252,7 +252,7 @@ def create_db_structure():
     set_setting_if_absent('last_local_media_update_ts', 0)
 
 
-@lru_cache(maxsize=1)
+@cache
 def load_playlist_configs():
     url = f"{__config.url}/api/collections/playlist_config/records"
     response = get_db_session().get(url)
@@ -306,7 +306,7 @@ class Settings:
     last_local_media_update_ts: int = 0
 
 
-@lru_cache(maxsize=1)
+@cache
 def load_settings():
     url = f"{__config.url}/api/collections/yt_sync_settings/records"
     response = get_db_session().get(url)
