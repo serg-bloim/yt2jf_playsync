@@ -35,6 +35,7 @@ class PlaylistConfigResp:
     ytm_pl_name: str
     jf_user_name: str
     sync: bool
+    col_name = 'playlist_config'
 
 
 @dataclasses.dataclass
@@ -143,7 +144,6 @@ def get_db_session():
     return session
 
 
-
 def std_fields():
     return [
         {
@@ -245,11 +245,16 @@ def create_db_structure():
     for model in models:
         create_collection(model.col_name, parse_dataclass(model))
 
-    set_setting_if_absent('pf2jf_path_conv_search', os.getenv('DEFAULT_PF2JF_PATH_CONV_SEARCH'))
-    set_setting_if_absent('pf2jf_path_conv_replace', os.getenv('DEFAULT_PF2JF_PATH_CONV_REPLACE'))
-    set_setting_if_absent('jf_user_name', os.getenv('DEFAULT_JF_USER_NAME'))
-    set_setting_if_absent('wait_time', os.getenv('DEFAULT_WAIT_TIME', '24h'))
-    set_setting_if_absent('last_local_media_update_ts', 0)
+    def_settings = Settings(
+        pf2jf_path_conv_search=os.getenv('DEFAULT_PF2JF_PATH_CONV_SEARCH'),
+        pf2jf_path_conv_replace=os.getenv('DEFAULT_PF2JF_PATH_CONV_REPLACE'),
+        jf_extract_ytid_regex=os.getenv('DEFAULT_PF2JF_YTID_REGEX'),
+        jf_user_name=os.getenv('DEFAULT_JF_USER_NAME'),
+        wait_time=os.getenv('DEFAULT_WAIT_TIME', '24h'),
+        last_local_media_update_ts=0,
+    )
+    for key, val in asdict(def_settings).items():
+        set_setting_if_absent(key, val)
 
 
 @cache

@@ -9,16 +9,19 @@ from ytmusicapi import YTMusic
 import atest
 import sync
 from atest.config import Config
-from atest.helpers import create_db_container, populate_db, check_yt_token, is_song, create_automated_playlist_cfg, insert, truncate_collection
+from atest.helpers import create_db_container, populate_db, check_yt_token, is_song, create_automated_playlist_cfg, insert, truncate
 from sync import sub_videos_with_songs
 from utils import db
-from utils.db import load_yt_media_metadata, YtMediaMetadata
+from utils.db import load_yt_media_metadata, YtMediaMetadata, load_playlist_configs, PlaylistConfigResp
+from utils.jf import find_user_by_name
 from utils.ytm import createYtMusic
 
 docker_client: DockerClient
 db_container: Container
 
 atest.update_envvar()
+
+express_mode = True
 
 
 def yt_plailist_set_items(ytc: YTMusic, pl_id: str, item_ids: Iterable[str]):
@@ -46,10 +49,25 @@ def yt_playlists():
     pl_dst_id = Config.Playlists.yt_dst_id
     yt_plailist_set_items(ytc, pl_src_id, src_items_to_add)
     yt_plailist_set_items(ytc, pl_dst_id, [])
-    truncate_collection(YtMediaMetadata)
+    truncate(YtMediaMetadata)
     mm = YtMediaMetadata(id=None, yt_id=src_video1_id, title='Test Title', artist='Test artist', category='video', album_name='Test album', duration=123, alt_id='BUWiEPJCbjs', ignore=False)
     insert(mm)
     yield src_items_to_add, pl_src_id, pl_dst_id
+
+
+@pytest.fixture
+def jf_playlists():
+    print("Prepare JF playlists")
+    truncate(PlaylistConfigResp)
+    pl_cfg = PlaylistConfigResp(id=None,
+                                jf_pl_id='2bcaa80fe3ff855242c17e32bb634e56',
+                                jf_pl_name='test1',
+                                ytm_pl_id='PL8xOIxSY5muApCYDDmUiKZyKMpdNMt-pM',
+                                ytm_pl_name='test_1',
+                                jf_user_name='test',
+                                sync=True)
+    insert(pl_cfg)
+    yield
 
 
 def setup_module(module):
@@ -63,19 +81,22 @@ def setup_module(module):
     current_ctx = docker.context.Context.load_context(docker.context.api.get_current_context_name())
     url = current_ctx.endpoints["docker"]["Host"]
     docker_client = docker.DockerClient(base_url=url)
-    db_container = create_db_container(docker_client)
-    db.create_db_structure()
-    populate_db()
+    has_db_container_running = 1 == len(docker_client.containers.list(filters={'name': Config.PocketBase.container_name, 'status': 'running'}))
+    if not (express_mode and has_db_container_running):
+        db_container = create_db_container(docker_client)
+        db.create_db_structure()
+        populate_db()
 
 
 def teardown_module(module):
-    print("module teardown")
-    db_container.remove(force=True)
-    docker_client.close()
+    if not express_mode:
+        print("module teardown")
+        db_container.remove(force=True)
+        docker_client.close()
 
 
 def test_yt_copy_to_playlist_no_replace(yt_playlists):
-    create_automated_playlist_cfg(truncate=True)
+    create_automated_playlist_cfg(truncate_col=True)
     src_ids, src_id, dst_id = yt_playlists
     sub_videos_with_songs()
     ytm = createYtMusic(Config.google_token.access_token, Config.google_token.refresh_token)
@@ -87,7 +108,7 @@ def test_yt_copy_to_playlist_no_replace(yt_playlists):
 
 
 def test_yt_copy_to_playlist_songs_and_converted_videos(yt_playlists):
-    create_automated_playlist_cfg(vsd_replace_during_copy=True, truncate=True)
+    create_automated_playlist_cfg(vsd_replace_during_copy=True, truncate_col=True)
     src_ids, src_id, dst_id = yt_playlists
     ytm = createYtMusic(Config.google_token.access_token, Config.google_token.refresh_token)
     pl_src_original = ytm.get_playlist(src_id)
@@ -105,7 +126,7 @@ def test_yt_copy_to_playlist_songs_and_converted_videos(yt_playlists):
 
 
 def test_yt_copy_to_playlist_replace_in_src(yt_playlists):
-    create_automated_playlist_cfg(vsd_replace_during_copy=True, vsd_replace_in_src=True, truncate=True)
+    create_automated_playlist_cfg(vsd_replace_during_copy=True, vsd_replace_in_src=True, truncate_col=True)
     src_ids, src_id, dst_id = yt_playlists
     ytm = createYtMusic(Config.google_token.access_token, Config.google_token.refresh_token)
     pl_src_original = ytm.get_playlist(src_id)
@@ -114,10 +135,16 @@ def test_yt_copy_to_playlist_replace_in_src(yt_playlists):
     sub_videos_with_songs()
     pl_src = ytm.get_playlist(src_id)
     pl_dst = ytm.get_playlist(dst_id)
-    converted_vids = {mm.yt_id:mm.alt_id for mm in load_yt_media_metadata() if mm.yt_id in src_videos and mm.alt_id}
+    converted_vids = {mm.yt_id: mm.alt_id for mm in load_yt_media_metadata() if mm.yt_id in src_videos and mm.alt_id}
     # Src playlist got possible videos replaced
     expected_src = songs.union(src_videos).union(converted_vids.values()).difference(converted_vids.keys())
     # Dst playlist got only songs and converted videos from Src
     expected_dst = songs.union(converted_vids.values())
     assert expected_src == {t['videoId'] for t in pl_src['tracks']}
     assert expected_dst == {t['videoId'] for t in pl_dst['tracks']}
+
+
+def test_sync_playlist(yt_playlists, jf_playlists):
+    pl_cfg = load_playlist_configs()[0]
+    user = find_user_by_name(pl_cfg.jf_user_name)
+    added_into_playlist, not_found = sync.sync_playlist(pl_cfg, user=user)

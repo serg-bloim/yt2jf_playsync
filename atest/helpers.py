@@ -56,7 +56,7 @@ def insert(obj):
     resp = get_db_session().post(url, json=asdict(obj))
     resp.raise_for_status()
 
-def truncate_collection(clazz):
+def truncate(clazz):
     resp = get_db_session().delete(f"{Config.PocketBase.url}/api/collections/{clazz.col_name}/truncate")
     resp.raise_for_status()
 
@@ -85,9 +85,9 @@ def is_song(track):
     return track['videoType'] == 'MUSIC_VIDEO_TYPE_ATV'
 
 
-def create_automated_playlist_cfg(vsd_replace_in_src=False, vsd_replace_during_copy=False, enabled=True, copy=True, truncate=True):
-    if truncate:
-        truncate_collection(YtAutomatedPlaylist)
+def create_automated_playlist_cfg(vsd_replace_in_src=False, vsd_replace_during_copy=False, enabled=True, copy=True, truncate_col=True):
+    if truncate_col:
+        truncate(YtAutomatedPlaylist)
         assert len(load_yt_automated_playbooks()) == 0
     pl = YtAutomatedPlaylist(yt_pl_id=Config.Playlists.yt_src_id,
                              yt_user=Config.TestUser.google_user,

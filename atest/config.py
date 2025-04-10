@@ -12,6 +12,9 @@ def read_token():
     return AccessToken(**data)
 
 class Config:
+    class JellyFin:
+        username = 'test'
+
     class TestUser:
         google_user = os.getenv('GOOGLE_USER_ID')
         slack_id = 'UFZPMKLKC'
@@ -35,3 +38,8 @@ class Config:
 os.environ['CONFIG_DB_URL'] = Config.PocketBase.url
 os.environ['CONFIG_DB_AUTH_USER'] = Config.PocketBase.username
 os.environ['CONFIG_DB_AUTH_PWD'] = Config.PocketBase.password
+
+os.environ['DEFAULT_PF2JF_PATH_CONV_SEARCH'] = '^/downloads'
+os.environ['DEFAULT_PF2JF_PATH_CONV_REPLACE'] = '/data'
+os.environ['DEFAULT_PF2JF_YTID_REGEX'] = '(?<=_)(?P<id>.{11,})(?=\.[^\.]+$)'
+os.environ['DEFAULT_JF_USER_NAME'] = 'test'
