@@ -1,5 +1,6 @@
 import json
 import os
+import webbrowser
 from dataclasses import asdict
 
 from pyyoutube import Client
@@ -22,6 +23,7 @@ def test_login(capsys):
                                                     prompt="consent")
     with capsys.disabled():
         print(authorize_url)
+    webbrowser.open(authorize_url)
     token = run_auth_server(ytc)
     with open(root_dir() / 'atest/token.json', 'w') as f:
         json.dump(asdict(token), f, indent=2)
