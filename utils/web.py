@@ -61,7 +61,7 @@ def run_auth_server(client: Client):
     server_address = ("0.0.0.0", PORT)
     httpd = HTTPServer(server_address, MyHandler)
     ssl_context = SSLContext()
-    ssl_context.load_cert_chain(root_dir() /'test/cert/cert.pem', root_dir() / 'test/cert/key.pem')
+    ssl_context.load_cert_chain(root_dir() /'atest/cert/cert.pem', root_dir() / 'atest/cert/key.pem')
     httpd.socket = ssl_context.wrap_socket(httpd.socket, server_side=True)
     httpd.serve_forever()
     pass
