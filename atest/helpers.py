@@ -11,6 +11,7 @@ from pyyoutube import Client
 from atest.config import Config
 from utils.common import root_dir
 from utils.db import GUser, get_db_session, YtAutomatedPlaylist, load_yt_automated_playbooks
+from utils.jf import get_user_session
 
 
 def create_db_container(docker_client):
@@ -40,6 +41,7 @@ def create_db_container(docker_client):
 
 
 def populate_db():
+    truncate(GUser)
     insert(GUser(id=None,
                  yt_user_id=Config.TestUser.google_user,
                  yt_username='TestUser',
@@ -98,3 +100,15 @@ def create_automated_playlist_cfg(vsd_replace_in_src=False, vsd_replace_during_c
                              copy_dst=Config.Playlists.yt_dst_id,
                              comment="atest copying from test_1 to test_2")
     insert(pl)
+
+__jf_url__= os.getenv('JELLYFIN_LOCAL_URL')
+
+def get_test_user_session():
+    return get_user_session(Config.TestUser.jf_username, Config.TestUser.jf_pw)
+
+def remove_items_from_jf_playlist(pl_id, items):
+    if not isinstance(items, str):
+        items = ",".join(items)
+    user_session = get_test_user_session()
+    resp = user_session.delete(f"{__jf_url__}/Playlists/{pl_id}/Items", params={"entryIds": items})
+    return resp.status_code == 204

@@ -16,6 +16,8 @@ class Config:
         username = 'test'
 
     class TestUser:
+        jf_username = 'Test'
+        jf_pw = 'qwaszx'
         google_user = os.getenv('GOOGLE_USER_ID')
         slack_id = 'UFZPMKLKC'
 
