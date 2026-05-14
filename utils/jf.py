@@ -10,7 +10,8 @@ client = JellyfinClient()
 import requests
 
 __session__ = requests.Session()
-__session__.headers.update({"X-Emby-Token": os.getenv('JELLYFIN_APIKEY')})
+__session__.headers.update({"Authorization": 'MediaBrowser Client="YourServerScript", Device="BackendServer", DeviceId="unique_server_id", Version="1.0.0"'})
+# __session__.headers.update({"X-Emby-Token": os.getenv('JELLYFIN_APIKEY')})
 __jf_external_url__ = os.getenv('JELLYFIN_PUBLIC_URL')
 __jf_url__ = os.getenv('JELLYFIN_LOCAL_URL') or __jf_external_url__
 logger = create_logger("jellyfin_client")

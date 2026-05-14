@@ -7,17 +7,25 @@ from utils.common import root_dir
 
 
 def read_token():
-    with open(root_dir() / 'test/token.json') as f:
-        data = json.load(f)
+    try:
+        with open(root_dir() / 'test/token.json') as f:
+            data = json.load(f)
+    except:
+        data= {}
     return AccessToken(**data)
 
 class Config:
+    express_mode = os.getenv('EXPRESS_MODE', '0') == '1'
     class JellyFin:
+        port = os.getenv('JF_TEST_PORT', '8097')
+        url = os.getenv('JF_TEST_URL', f'http://localhost:{port}')
+        image = 'linuxserver/jellyfin:10.11.8'
+        container_name = 'playsync_jellyfin_test'
         username = 'test'
 
     class TestUser:
-        jf_username = 'Test'
-        jf_pw = 'qwaszx'
+        jf_username = 'test'
+        jf_pw = 'qwerty'
         google_user = os.getenv('GOOGLE_USER_ID')
         slack_id = 'UFZPMKLKC'
 
@@ -45,3 +53,5 @@ def update_envvar():
     os.environ['DEFAULT_PF2JF_PATH_CONV_REPLACE'] = '/data'
     os.environ['DEFAULT_PF2JF_YTID_REGEX'] = '(?<=_)(?P<id>.{11,})(?=\.[^\.]+$)'
     os.environ['DEFAULT_JF_USER_NAME'] = 'test'
+
+    os.environ['JELLYFIN_LOCAL_URL'] = Config.JellyFin.url

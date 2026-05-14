@@ -1,0 +1,103 @@
+from contextlib import contextmanager
+from time import sleep
+
+import docker
+import pytest
+import requests
+import waiting
+
+from test.config import Config
+from test.helpers import populate_db
+from utils import db
+from utils.db import get_db_session
+
+
+@contextmanager
+def managed_container(docker_client, image, container_name, ports=None, express_mode=False):
+    old_container = next((c for c in docker_client.containers.list(all=True) if c.name == container_name), None)
+    if express_mode and old_container and old_container.status == 'running':
+        print(f"{container_name} is already running in express mode")
+        container = old_container
+    else:
+        print(f"Running container {container_name}")
+        if old_container:
+            old_container.remove(force=True)
+        container = docker_client.containers.run(image,
+                                                 name=container_name,
+                                                 detach=True,
+                                                 ports=ports)
+    try:
+        yield container
+    finally:
+        if not express_mode:
+            print(f"Removing container {container_name}")
+            container.remove(force=True)
+
+
+@pytest.fixture(scope='session')
+def docker_client():
+    current_ctx = docker.context.Context.load_context(docker.context.api.get_current_context_name())
+    url = current_ctx.endpoints["docker"]["Host"]
+    docker_client = docker.DockerClient(base_url=url)
+    try:
+        yield docker_client
+    finally:
+        docker_client.close()
+
+
+@pytest.fixture(scope='session')
+def docker_pocketbase(docker_client):
+    with managed_container(docker_client,
+                           Config.PocketBase.image,
+                           Config.PocketBase.container_name,
+                           ports=Config.PocketBase.port_mapping,
+                           express_mode=Config.express_mode) as db_container:
+        def predicate():
+            requests.get(Config.PocketBase.url + "/_").raise_for_status()
+            return True
+
+        sleep(1)
+        waiting.wait(predicate,
+                     expected_exceptions=requests.exceptions.ConnectionError,
+                     timeout_seconds=20)
+        sleep(1)
+        try:
+            get_db_session()
+        except:
+            code, out = db_container.exec_run(
+                f'/bin/pocketbase --dir /exia/pocketbase --hooksDir /exia/pocketbase_hooks --publicDir /exia/pocketbase_public superuser upsert {Config.PocketBase.username} {Config.PocketBase.password}')
+            assert code == 0
+            print(out.decode())
+            db.create_db_structure()
+            populate_db()
+        yield db_container
+
+
+@pytest.fixture(scope='session')
+def docker_jf(docker_client):
+    with managed_container(docker_client,
+                           Config.JellyFin.image,
+                           Config.JellyFin.container_name,
+                           ports={'8096/tcp': int(Config.JellyFin.port)},
+                           express_mode=Config.express_mode) as db:
+        def predicate():
+            requests.get(f"{Config.JellyFin.url}/health").raise_for_status()
+            return True
+
+        sleep(1)
+        waiting.wait(predicate,
+                     expected_exceptions=(requests.exceptions.ConnectionError, requests.exceptions.HTTPError),
+                     timeout_seconds=60,
+                     sleep_seconds=2)
+
+        resp = requests.get(f"{Config.JellyFin.url}/Startup/Configuration")
+        resp.raise_for_status()
+        init_cfg = resp.json()
+        init_cfg["ServerName"] = "Test server"
+        requests.post(f"{Config.JellyFin.url}/Startup/Configuration", json=init_cfg).raise_for_status()
+        requests.get(f"{Config.JellyFin.url}/Startup/User").raise_for_status()
+        requests.post(f"{Config.JellyFin.url}/Startup/User",
+                      json={"Name": Config.TestUser.jf_username, "Password": Config.TestUser.jf_pw}).raise_for_status()
+        requests.post(f"{Config.JellyFin.url}/Startup/Complete").raise_for_status()
+
+        yield db

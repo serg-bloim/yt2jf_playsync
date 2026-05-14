@@ -5,3 +5,6 @@ pytimeparse==1.1.8
 slack_sdk==3.34.0
 python-youtube==0.9.7
 ytmusicapi==1.11.5
+docker==7.1.0
+pytest==9.0.3
+waiting==1.5.0

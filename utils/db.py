@@ -130,11 +130,9 @@ def db_auth():
         'identity': __config.auth_user,
         'password': __config.auth_pwd
     })
-    if response:
-        logger.info("Successfully authenticated.")
-        return response.json()['token']
-    else:
-        logger.error(f"Failed to authenticate. Status: {response.status_code}, Response:{response.json()}")
+    response.raise_for_status()
+    logger.info("Successfully authenticated.")
+    return response.json()['token']
 
 
 @cache
