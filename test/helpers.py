@@ -5,6 +5,8 @@ from dataclasses import asdict
 
 import requests
 from pyyoutube import Client
+from requests.adapters import HTTPAdapter
+from urllib3 import Retry
 
 from test.config import Config
 from utils.common import root_dir
@@ -107,3 +109,24 @@ def setup_jf_library():
                                  "refreshLibrary": True
                              })
     resp.raise_for_status()
+
+def requests_retry_session(
+    retries=3,
+    backoff_factor=0.3,
+    status_forcelist=(500, 502, 504),
+    session=None,
+):
+    session = session or requests.Session()
+    # Define retry strategy
+    retry = Retry(
+        total=retries, # Total attempts including the first one
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor, # Delay between retries
+        status_forcelist=status_forcelist, # HTTP status codes to retry on
+    )
+    # Mount the adapter to both http and https protocols
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session

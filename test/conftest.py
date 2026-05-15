@@ -7,9 +7,10 @@ import requests
 import waiting
 
 from test.config import Config
-from test.helpers import populate_db
+from test.helpers import populate_db, get_test_user_session, requests_retry_session
 from utils import db
 from utils.db import get_db_session
+from utils.jf import get_current_user
 
 
 @contextmanager
@@ -59,7 +60,7 @@ def docker_pocketbase(docker_client):
         sleep(1)
         waiting.wait(predicate,
                      expected_exceptions=requests.exceptions.ConnectionError,
-                     timeout_seconds=20)
+                     timeout_seconds=60)
         sleep(1)
         try:
             get_db_session()
@@ -89,15 +90,32 @@ def docker_jf(docker_client):
                      expected_exceptions=(requests.exceptions.ConnectionError, requests.exceptions.HTTPError),
                      timeout_seconds=60,
                      sleep_seconds=2)
-
-        resp = requests.get(f"{Config.JellyFin.url}/Startup/Configuration")
-        resp.raise_for_status()
-        init_cfg = resp.json()
-        init_cfg["ServerName"] = "Test server"
-        requests.post(f"{Config.JellyFin.url}/Startup/Configuration", json=init_cfg).raise_for_status()
-        requests.get(f"{Config.JellyFin.url}/Startup/User").raise_for_status()
-        requests.post(f"{Config.JellyFin.url}/Startup/User",
-                      json={"Name": Config.TestUser.jf_username, "Password": Config.TestUser.jf_pw}).raise_for_status()
-        requests.post(f"{Config.JellyFin.url}/Startup/Complete").raise_for_status()
+        try:
+            get_test_user_session()
+        except:
+            session = requests_retry_session(status_forcelist=list(range(500, 505)))
+            resp = session.get(f"{Config.JellyFin.url}/Startup/Configuration")
+            resp.raise_for_status()
+            init_cfg = resp.json()
+            init_cfg["ServerName"] = "Test server"
+            requests.post(f"{Config.JellyFin.url}/Startup/Configuration", json=init_cfg).raise_for_status()
+            requests.get(f"{Config.JellyFin.url}/Startup/User").raise_for_status()
+            requests.post(f"{Config.JellyFin.url}/Startup/User",
+                          json={"Name": Config.TestUser.jf_username, "Password": Config.TestUser.jf_pw}).raise_for_status()
+            requests.post(f"{Config.JellyFin.url}/Startup/Complete").raise_for_status()
 
         yield db
+
+@pytest.fixture(scope='session')
+def jf_session(docker_jf):
+    return get_test_user_session()
+
+
+@pytest.fixture(scope='session')
+def jf_user(jf_session):
+    return get_current_user()
+
+@pytest.fixture(scope='session')
+def local_infra(docker_pocketbase, docker_jf):
+    pass
+

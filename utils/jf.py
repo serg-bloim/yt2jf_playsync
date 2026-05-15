@@ -18,11 +18,13 @@ logger = create_logger("jellyfin_client")
 
 
 def get_user_session(username, password):
+    global __session__
     auth_resp = __session__.post(f"{__jf_url__}/Users/AuthenticateByName", json={"Username": username, "Pw": password})
     if auth_resp.status_code == 200:
         access_token = auth_resp.json()['AccessToken']
         user_session = requests.Session()
         user_session.headers.update({'X-Emby-Token': access_token})
+        __session__ = user_session
         return user_session
     logger.error(f"Cannot create a user session for '{username}', status: {auth_resp.status_code}")
     auth_resp.raise_for_status()
@@ -70,6 +72,8 @@ def save_item(item):
     resp = __session__.post(f"{__jf_url__}/Items/{id}", json=item)
     return resp.status_code == 204
 
+def load_all_playlists():
+    return load_all_items(types="Playlist")
 
 @dataclasses.dataclass
 class User:
@@ -77,6 +81,17 @@ class User:
     name: str
     raw: dict
 
+
+def get_current_user():
+    resp = __session__.get(f"{__jf_url__}/Users/Me")
+    if resp:
+        data = resp.json()
+        allowed_fields = {field.name for field in User.__dataclass_fields__.values()}
+        data = {k.lower(): v for k, v in data.items() if k.lower() in allowed_fields}
+        data['raw'] = resp.json()
+        return User(**data)
+    else:
+        logger.warning(f"Cannot find current user")
 
 def find_user_by_name(name):
     resp = __session__.get(f"{__jf_url__}/Users")
