@@ -69,7 +69,7 @@ def __setup_slack_callback__():
     __socket_client__.connect()
 
 
-__setup_slack_callback__()
+# __setup_slack_callback__()
 
 
 def send_message(msg, channel_id, blocks=None):

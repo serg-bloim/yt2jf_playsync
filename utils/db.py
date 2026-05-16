@@ -255,7 +255,6 @@ def create_db_structure():
         set_setting_if_absent(key, val)
 
 
-@cache
 def load_playlist_configs():
     url = f"{__config.url}/api/collections/playlist_config/records"
     response = get_db_session().get(url)

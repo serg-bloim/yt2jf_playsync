@@ -11,7 +11,7 @@ from urllib3 import Retry
 from test.config import Config
 from utils.common import root_dir
 from utils.db import GUser, get_db_session, YtAutomatedPlaylist, load_yt_automated_playbooks
-from utils.jf import get_user_session
+from utils.jf import get_user_session, load_all_playlists
 
 
 def populate_db():
@@ -130,3 +130,9 @@ def requests_retry_session(
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     return session
+
+def find_jf_playlist_by_name(name):
+    playlists = load_all_playlists()
+    for pl in playlists:
+        if pl['Name'] == name:
+            return pl

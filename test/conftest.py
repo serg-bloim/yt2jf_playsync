@@ -93,7 +93,7 @@ def docker_jf(docker_client):
         try:
             get_test_user_session()
         except:
-            session = requests_retry_session(status_forcelist=list(range(500, 505)))
+            session = requests_retry_session(retries=5, status_forcelist=list(range(500, 505)))
             resp = session.get(f"{Config.JellyFin.url}/Startup/Configuration")
             resp.raise_for_status()
             init_cfg = resp.json()
