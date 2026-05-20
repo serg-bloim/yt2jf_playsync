@@ -1,9 +1,12 @@
+import io
 import json
 import os
+import tarfile
 import time
 from dataclasses import asdict
 
 import requests
+from docker.models.containers import Container
 from pyyoutube import Client
 from requests.adapters import HTTPAdapter
 from urllib3 import Retry
@@ -11,7 +14,7 @@ from urllib3 import Retry
 from test.config import Config
 from utils.common import root_dir
 from utils.db import GUser, get_db_session, YtAutomatedPlaylist, load_yt_automated_playbooks
-from utils.jf import get_user_session, load_all_playlists
+from utils.jf import get_user_session, load_all_playlists, remove_item
 
 
 def populate_db():
@@ -30,6 +33,12 @@ def populate_db():
 def insert(obj):
     url = f"{Config.PocketBase.url}/api/collections/{obj.col_name}/records"
     resp = get_db_session().post(url, json=asdict(obj))
+    resp.raise_for_status()
+    return resp.json()['id']
+
+def delete(obj):
+    url = f"{Config.PocketBase.url}/api/collections/{obj.col_name}/records/{obj.id}"
+    resp = get_db_session().delete(url)
     resp.raise_for_status()
 
 
@@ -136,3 +145,24 @@ def find_jf_playlist_by_name(name):
     for pl in playlists:
         if pl['Name'] == name:
             return pl
+
+def copy_files_into_docker_container(container:Container, dst_path, *src_paths):
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w:gz') as tar:  # 'w:gz' for gzip, 'w' for uncompressed
+        for src in src_paths:
+            tar.add(src, arcname=os.path.basename(src))
+    container.put_archive(dst_path, buf.getvalue())
+
+def copy_single_file_into_docker_container(container:Container, dst_path, src_path):
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w:gz') as tar:  # 'w:gz' for gzip, 'w' for uncompressed
+        tar.add(src_path, arcname=os.path.basename(dst_path))
+    container.put_archive(os.path.dirname(dst_path), buf.getvalue())
+
+def remove_jf_playlist(pl_id):
+    return remove_item(pl_id)
+
+def refresh_jf_library():
+    user_session = get_test_user_session()
+    resp = user_session.post(f"{__jf_url__}/Library/Refresh")
+    return resp.status_code == 204

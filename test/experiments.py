@@ -5,6 +5,7 @@ import docker
 
 import sync
 from sync import sub_videos_with_songs, resolve_video_substitution
+from test.helpers import copy_files_into_docker_container
 from utils import db, jf
 from utils.common import get_nested_value
 from utils.db import load_settings, load_guser_by_id
@@ -93,6 +94,14 @@ class MyTestCase(unittest.TestCase):
         out = client.containers.run("bash", "echo 555", remove=True)
         print(out)
 
+    def test_upload_file_to_docker(self):
+        current_ctx = docker.context.Context.load_context(docker.context.api.get_current_context_name())
+        url = current_ctx.endpoints["docker"]["Host"]
+        docker_client = docker.DockerClient(base_url=url)
+        container_name = 'playsync_jellyfin_test'
+        container =  next((c for c in docker_client.containers.list(all=True) if c.name == container_name), None)
+        copy_files_into_docker_container(container, "/tmp/", "/Users/sbilon426/personal/projects/yt2jf_playsync/test/media/sample.m4a")
+        pass
 
 if __name__ == '__main__':
     unittest.main()

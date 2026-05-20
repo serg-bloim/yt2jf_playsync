@@ -133,3 +133,7 @@ def create_playlist(ytm_pl_name, user_id, type=None):
     resp = __session__.post(f"{__jf_url__}/Playlists/", params=params)
     resp.raise_for_status()
     return resp.json()['Id']
+
+def remove_item(itm_id):
+    resp = __session__.delete(f"{__jf_url__}/Items/{itm_id}")
+    return resp.status_code == 204

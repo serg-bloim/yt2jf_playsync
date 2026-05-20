@@ -7,7 +7,7 @@ import requests
 import waiting
 
 from test.config import Config
-from test.helpers import populate_db, get_test_user_session, requests_retry_session
+from test.helpers import populate_db, get_test_user_session, requests_retry_session, setup_jf_library
 from utils import db
 from utils.db import get_db_session
 from utils.jf import get_current_user
@@ -103,6 +103,7 @@ def docker_jf(docker_client):
             requests.post(f"{Config.JellyFin.url}/Startup/User",
                           json={"Name": Config.TestUser.jf_username, "Password": Config.TestUser.jf_pw}).raise_for_status()
             requests.post(f"{Config.JellyFin.url}/Startup/Complete").raise_for_status()
+            setup_jf_library()
 
         yield db
 
@@ -117,5 +118,5 @@ def jf_user(jf_session):
 
 @pytest.fixture(scope='session')
 def local_infra(docker_pocketbase, docker_jf):
-    pass
+    return (docker_pocketbase, docker_jf)
 
