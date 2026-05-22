@@ -4,7 +4,7 @@ import pytest
 
 from sync import update_pl_cfg_in_db, sync_playlist
 from test.helpers import insert, truncate, find_jf_playlist_by_name, remove_jf_playlist, copy_files_into_docker_container, refresh_jf_library, copy_single_file_into_docker_container, delete
-from utils.db import PlaylistConfigResp, load_playlist_configs
+from utils.db import PlaylistConfigResp, load_playlist_configs, load_download_tasks, DownloadTask
 from utils.jf import load_jf_playlist, create_playlist, find_user_by_name, add_media_ids_to_playlist, load_all_items, load_item_by_id, save_item
 from utils.ytm import load_flat_playlist
 
@@ -71,10 +71,16 @@ def test_sync_yt_into_jf_playlist(local_infra, jf_session, pl_sync_cfg_1, jf_use
     """
     print(pl_sync_cfg_1.jf_pl_id)
     assert len(load_jf_playlist(pl_sync_cfg_1.jf_pl_id, jf_user.id, "ProviderIds")['Items']) == 1, "Before sync, only 1 song should be in the JF playlist"
+    truncate(DownloadTask)
     sync_playlist(pl_sync_cfg_1.pl_cfg, jf_user)
     jf_playlist_songs = load_jf_playlist(pl_sync_cfg_1.jf_pl_id, jf_user.id, "ProviderIds")['Items']
     assert len(jf_playlist_songs) == 2, "After sync, there should be 2 songs in the JF playlist (the 1 that was already there + the 1 new one that was in the library)"
     assert set(s['ProviderIds']['YT'] for s in jf_playlist_songs) == set(pl_sync_cfg_1.situation.jf_lib_song_ids), "Only the songs that are in the JF library should be in the playlist after sync"
+    dl_tasks = load_download_tasks()
+    missing_yt_ids = list(set(pl_sync_cfg_1.situation.yt_pl_song_ids) - set(pl_sync_cfg_1.situation.jf_lib_song_ids))
+    assert len(missing_yt_ids) == 1, "There should be exactly 1 song missing from the JF library for the test scenario to be valid"
+    assert len(dl_tasks) == 1, "There should be 1 download task created for the song that was not in the JF library"
+    assert dl_tasks[0].yt_id == missing_yt_ids[0], "The download task should be for the song that was not in the JF library"
     pass
 
 

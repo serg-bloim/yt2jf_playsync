@@ -73,6 +73,15 @@ class YtMediaMetadata:
 
 
 @dataclasses.dataclass
+class DownloadTask:
+    id: str
+    yt_id: str = field(metadata={'unique_key': True})
+    path: str
+    status: str = 'new'
+    col_name = 'download_task'
+
+
+@dataclasses.dataclass
 class YtAutomatedPlaylist:
     yt_pl_id: str
     yt_user: str
@@ -239,7 +248,7 @@ def create_db_structure():
                        {'name': 'val', 'type': 'text'}]
     create_collection('yt_sync_settings', settings_fields)
     create_collection('local_media_archive', parse_dataclass(LocalMediaArchive))
-    models = [YtMediaMetadata, YtAutomatedPlaylist, GUser]
+    models = [YtMediaMetadata, YtAutomatedPlaylist, GUser, DownloadTask]
     for model in models:
         create_collection(model.col_name, parse_dataclass(model))
 
@@ -290,6 +299,10 @@ def load_media_mappings():
     url = f"{__config.url}/api/collections/yt_media_mapping/records"
     recs = load_all_paged_records(url)
     return [MediaMappingResp(**{k: v for k, v in pl.items() if k in MediaMappingResp_allowed_fields}) for pl in recs]
+
+
+def load_download_tasks() -> list[DownloadTask]:
+    return load_all_db_objects(DownloadTask)
 
 
 def delete_mapping(mapping: MediaMappingResp):
