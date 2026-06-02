@@ -12,7 +12,8 @@ from ytmusicapi import YTMusic
 from utils import slack
 from utils.common import get_nested_value, first, format_scaled_number, group_by
 from utils.db import load_media_mappings, load_settings, load_playlist_configs, save_playlist_config, load_local_media, \
-    add_local_media, load_yt_automated_playbooks, load_yt_media_metadata, YtMediaMetadata, save_yt_media_metadata, load_guser_by_id, create_yt_media_metadata
+    add_local_media, load_yt_automated_playbooks, load_yt_media_metadata, YtMediaMetadata, save_yt_media_metadata, load_guser_by_id, create_yt_media_metadata, DownloadTask, create_download_task, \
+    CreateOpResult
 from utils.jf import load_all_items, find_user_by_name, load_item_by_id, save_item, load_jf_playlist, \
     add_media_ids_to_playlist, create_playlist, get_jf_base_url
 from utils.logs import create_logger
@@ -318,6 +319,12 @@ def sync_playlist(pl_config, user=None, items=None, logger=None):
     log_level_func = logger.info if added_n == len(already_in_library) else logger.warning
     msg1 = f"Added {added_n} out of {len(already_in_library)} possible medias into the playlist {pl_config.jf_pl_name}"
     msg2 = f"{len(not_in_lib)} medias are not in the library"
+
+    logger.info(f"Adding {len(not_in_lib)} download tasks for missing medias")
+    for yt_song in not_in_lib:
+        logger.debug(f"Adding download task for media '{yt_song['channel']}/{yt_song['title']}'[{yt_song['url']}]")
+        if (status := create_download_task(DownloadTask(yt_id=yt_song['id']))) != CreateOpResult.CREATED:
+            logger.error(f"Failed to create download task for media '{yt_song['channel']}/{yt_song['title']}'[{yt_song['url']}], status: {status}")
 
     # Send out a report about medias that were not possible to recover automatically
     for batch in itertools.batched(recovery_media_mismatch[:2], 15):

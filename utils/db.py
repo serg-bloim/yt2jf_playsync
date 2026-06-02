@@ -74,9 +74,9 @@ class YtMediaMetadata:
 
 @dataclasses.dataclass
 class DownloadTask:
-    id: str
-    yt_id: str = field(metadata={'unique_key': True})
-    path: str
+    id: str = None
+    yt_id: str = field(metadata={'unique_key': True}, default=None)
+    path: str = None
     status: str = 'new'
     col_name = 'download_task'
 
@@ -433,6 +433,22 @@ def save_guser(user: GUser):
     response = get_db_session().patch(url, json=asdict(user))
     response.raise_for_status()
 
+def create_download_task(task: DownloadTask) -> CreateOpResult:
+    url = f"{__config.url}/api/collections/{DownloadTask.col_name}/records"
+    try:
+        resp = get_db_session().post(url, data=asdict(task))
+        http_code = resp.status_code
+        if resp:
+            logger.debug(f"Added DownloadTask '{task.yt_id}'")
+            return CreateOpResult.CREATED
+        elif http_code == 400 and get_nested_value(resp.json(), "data", "yt_id", "code") == 'validation_not_unique':
+            logger.debug(f"DownloadTask for yt_id '{task.yt_id}' already exists")
+            return CreateOpResult.DUPLICATE
+        else:
+            resp.raise_for_status()
+    except:
+        logger.exception(f"Cannot save a DownloadTask for yt_id '{task.yt_id}'")
+    return CreateOpResult.ERROR
 
 def filter_fields(d, fields):
     return {k: v for k, v in d.items() if k in fields}
