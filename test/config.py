@@ -55,3 +55,4 @@ def update_envvar():
     os.environ['DEFAULT_JF_USER_NAME'] = 'test'
 
     os.environ['JELLYFIN_LOCAL_URL'] = Config.JellyFin.url
+    os.environ['CONFIG_YTD_ROOT_DIR'] = '/tmp/test_ytdl'

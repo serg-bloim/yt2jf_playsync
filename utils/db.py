@@ -77,7 +77,7 @@ class DownloadTask:
     id: str = None
     yt_id: str = field(metadata={'unique_key': True}, default=None)
     path: str = None
-    status: str = 'new'
+    status: str = 'pending'
     col_name = 'download_task'
 
 
@@ -263,6 +263,10 @@ def create_db_structure():
     for key, val in asdict(def_settings).items():
         set_setting_if_absent(key, val)
 
+def save_entity(entity):
+    url = f"{__config.url}/api/collections/{entity.col_name}/records/{entity.id}"
+    response = get_db_session().patch(url, json=asdict(entity))
+    response.raise_for_status()
 
 def load_playlist_configs():
     url = f"{__config.url}/api/collections/playlist_config/records"

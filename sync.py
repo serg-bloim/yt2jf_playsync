@@ -6,6 +6,7 @@ import re
 from dataclasses import replace
 from typing import List
 
+import yt_dlp
 from slack_sdk.socket_mode.request import SocketModeRequest
 from ytmusicapi import YTMusic
 
@@ -13,7 +14,7 @@ from utils import slack
 from utils.common import get_nested_value, first, format_scaled_number, group_by
 from utils.db import load_media_mappings, load_settings, load_playlist_configs, save_playlist_config, load_local_media, \
     add_local_media, load_yt_automated_playbooks, load_yt_media_metadata, YtMediaMetadata, save_yt_media_metadata, load_guser_by_id, create_yt_media_metadata, DownloadTask, create_download_task, \
-    CreateOpResult
+    CreateOpResult, load_download_tasks, save_entity
 from utils.jf import load_all_items, find_user_by_name, load_item_by_id, save_item, load_jf_playlist, \
     add_media_ids_to_playlist, create_playlist, get_jf_base_url
 from utils.logs import create_logger
@@ -603,3 +604,34 @@ def sub_videos_with_songs():
                         logger.exception(f"Failed to save {mm}")
                 if unresolved_videos:
                     resolve_video_substitution([v['videoId'] for v, pl_cfg, pl_data in unresolved_videos], usr.slack_user)
+
+
+def process_download_tasks():
+    logger = create_logger("yt_dwld")
+    root_dir = os.environ.get('CONFIG_YTD_ROOT_DIR', "/tmp/ytdl")
+    output_template = os.path.join(root_dir, "ytm_%(id)s_ytm.%(ext)s")
+    pending_tasks = {t.yt_id: t for t in load_download_tasks() if t.status == 'pending'}
+
+    def progress_hook(song):
+        logger.info(f"Download progress for {song['filename']}: {song['status']}")
+        if song['status'] == 'finished':
+            yt_id = song['info_dict']['id']
+            file_path = song['filename']
+            task = pending_tasks[yt_id]
+            task.path = file_path
+            task.status = 'downloaded'
+            save_entity(task)
+
+    ydl_opts = {
+        'progress_hooks': [progress_hook],
+        'format': 'bestaudio/best',
+        'outtmpl': output_template,
+        'quiet': True,
+        'no_warnings': True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        for task in pending_tasks.values():
+            try:
+                ydl.download([f"https://www.youtube.com/watch?v={task.yt_id}"])
+            except:
+                logger.exception(f"Failed to download yt_id {task.yt_id} for task {task.id}")

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from sync import update_pl_cfg_in_db, sync_playlist
+from sync import update_pl_cfg_in_db, sync_playlist, process_download_tasks
 from test.helpers import insert, truncate, find_jf_playlist_by_name, remove_jf_playlist, copy_files_into_docker_container, refresh_jf_library, copy_single_file_into_docker_container, delete
 from utils.db import PlaylistConfigResp, load_playlist_configs, load_download_tasks, DownloadTask
 from utils.jf import load_jf_playlist, create_playlist, find_user_by_name, add_media_ids_to_playlist, load_all_items, load_item_by_id, save_item
@@ -83,6 +83,17 @@ def test_sync_yt_into_jf_playlist(local_infra, jf_session, pl_sync_cfg_1, jf_use
     assert dl_tasks[0].yt_id == missing_yt_ids[0], "The download task should be for the song that was not in the JF library"
     pass
 
+def test_download_single_song():
+    """Test downloading a single song from YT"""
+    truncate(DownloadTask)
+    insert(DownloadTask(yt_id="HzvDofigTKQ"))
+    process_download_tasks()
+    dl_tasks = load_download_tasks()
+    assert len(dl_tasks) == 1, "There should be 1 download task in the database"
+    assert dl_tasks[0].status == "downloaded", "The download task should be marked as downloaded after processing"
+    assert dl_tasks[0].path is not None, "The download task should have a file path after processing"
+    # Assert file size is as expected
+    # Remove the file after the test
 
 @pytest.fixture
 def pl_sync_cfg_1(docker_jf, jf_user):

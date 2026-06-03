@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import pytimeparse
 
-from sync import update_yt_ids_in_db, sync_all_playlists, update_pl_cfg_in_db, sub_videos_with_songs, SLACK_CHANNEL_INFO
+from sync import update_yt_ids_in_db, sync_all_playlists, update_pl_cfg_in_db, sub_videos_with_songs, SLACK_CHANNEL_INFO, process_download_tasks
 from utils import slack
 from utils.common import get_nested_value
 from utils.db import load_settings, create_db_structure
@@ -43,6 +43,7 @@ def main():
         update_yt_ids_in_db()
         sub_videos_with_songs()
         sync_all_playlists()
+        process_download_tasks()
     except:
         logger.exception("Error during the main cycle")
         with io.StringIO() as output:
