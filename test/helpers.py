@@ -14,7 +14,7 @@ from urllib3 import Retry
 from test.config import Config
 from utils.common import root_dir
 from utils.db import GUser, get_db_session, YtAutomatedPlaylist, load_yt_automated_playbooks
-from utils.jf import get_user_session, load_all_playlists, remove_item
+from utils.jf import get_user_session, load_all_playlists, remove_item, load_all_items
 
 
 def populate_db():
@@ -161,6 +161,10 @@ def copy_single_file_into_docker_container(container:Container, dst_path, src_pa
 
 def remove_jf_playlist(pl_id):
     return remove_item(pl_id)
+
+def jf_has_song_with_yt_id(yt_id):
+    itms = load_all_items("Audio", "Path")
+    return next((s for s in itms if yt_id in s['Path']), None) is not None
 
 def refresh_jf_library():
     user_session = get_test_user_session()
