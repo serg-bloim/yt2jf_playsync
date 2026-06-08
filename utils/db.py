@@ -263,9 +263,12 @@ def create_db_structure():
     for key, val in asdict(def_settings).items():
         set_setting_if_absent(key, val)
 
-def save_entity(entity):
+def save_entity(entity, fields=None):
     url = f"{__config.url}/api/collections/{entity.col_name}/records/{entity.id}"
-    response = get_db_session().patch(url, json=asdict(entity))
+    data = asdict(entity)
+    if fields:
+        data = {k: v for k, v in data.items() if k in fields}
+    response = get_db_session().patch(url, json=data)
     response.raise_for_status()
 
 def load_playlist_configs():
@@ -305,8 +308,8 @@ def load_media_mappings():
     return [MediaMappingResp(**{k: v for k, v in pl.items() if k in MediaMappingResp_allowed_fields}) for pl in recs]
 
 
-def load_download_tasks() -> list[DownloadTask]:
-    return load_all_db_objects(DownloadTask)
+def load_download_tasks(status=None) -> list[DownloadTask]:
+    return [dt for dt in load_all_db_objects(DownloadTask) if status is None or dt.status == status]
 
 
 def delete_mapping(mapping: MediaMappingResp):
@@ -436,6 +439,7 @@ def save_guser(user: GUser):
     url = f"{__config.url}/api/collections/{user.col_name}/records/{user.id}"
     response = get_db_session().patch(url, json=asdict(user))
     response.raise_for_status()
+
 
 def create_download_task(task: DownloadTask) -> CreateOpResult:
     url = f"{__config.url}/api/collections/{DownloadTask.col_name}/records"

@@ -137,3 +137,29 @@ def create_playlist(ytm_pl_name, user_id, type=None):
 def remove_item(itm_id):
     resp = __session__.delete(f"{__jf_url__}/Items/{itm_id}")
     return resp.status_code == 204
+
+def load_all_virtual_folders():
+    resp = __session__.get(f"{__jf_url__}/Library/VirtualFolders")
+    if resp:
+        return resp.json()
+    else:
+        logger.warning(f"Cannot load virtual folders")
+
+def refresh_virtual_folder(vf_id):
+    resp = __session__.post(f"{__jf_url__}/Items/{vf_id}/Refresh", params={"Recursive": "true",
+                                                                           "ImageRefreshMode":"Default",
+                                                                           "MetadataRefreshMode":"Default",
+                                                                           "ReplaceAllImages":"false",
+                                                                           "RegenerateTrickplay":"false",
+                                                                           "ReplaceAllMetadata":"false",
+                                                                           })
+    return resp.status_code == 204
+
+def reload_library():
+    __session__.post(f"{__jf_url__}/Library/Refresh")
+    for vf in load_all_virtual_folders():
+        try:
+            refresh_virtual_folder(vf['ItemId'])
+            logger.info(f"Virtual folder {vf['Name']} ({vf['ItemId']}) refreshed successfully")
+        except:
+            logger.warning(f"Cannot refresh virtual folder '{vf['Name']}' ({vf['ItemId']})")

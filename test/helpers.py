@@ -13,8 +13,8 @@ from urllib3 import Retry
 
 from test.config import Config
 from utils.common import root_dir
-from utils.db import GUser, get_db_session, YtAutomatedPlaylist, load_yt_automated_playbooks
-from utils.jf import get_user_session, load_all_playlists, remove_item, load_all_items
+from utils.db import GUser, get_db_session, YtAutomatedPlaylist, load_yt_automated_playbooks, Settings, load_settings
+from utils.jf import get_user_session, load_all_playlists, remove_item, load_all_items, reload_library
 
 
 def populate_db():
@@ -35,6 +35,7 @@ def insert(obj):
     resp = get_db_session().post(url, json=asdict(obj))
     resp.raise_for_status()
     return resp.json()['id']
+
 
 def delete(obj):
     url = f"{Config.PocketBase.url}/api/collections/{obj.col_name}/records/{obj.id}"
@@ -114,7 +115,7 @@ def setup_jf_library():
                              params={
                                  "name": lib_name,
                                  "collectionType": "music",
-                                 "paths": ["/tmp"],
+                                 "paths": [Config.JellyFin.music_lib_dir],
                                  "refreshLibrary": True
                              })
     resp.raise_for_status()
@@ -166,7 +167,43 @@ def jf_has_song_with_yt_id(yt_id):
     itms = load_all_items("Audio", "Path")
     return next((s for s in itms if yt_id in s['Path']), None) is not None
 
-def refresh_jf_library():
-    user_session = get_test_user_session()
-    resp = user_session.post(f"{__jf_url__}/Library/Refresh")
-    return resp.status_code == 204
+
+def retry_on_exception(func, retries=6, delay=1, backoff=2):
+    for i in range(retries - 1):
+        try:
+            return func()
+        except:
+            print(f"Attempt {i + 1}/{retries} failed, retrying in {delay} seconds...")
+            time.sleep(delay)
+            delay *= backoff
+    return func()
+
+
+def reload_lib_until_song_found_n_times(yt_id, n=1, max_retries=5):
+    def predicate():
+        return n == sum(1 for s in load_all_items("Audio", "Path") if yt_id in s['Path'])
+
+    sleep_time = 1
+    sleep_time_multiplier = 2
+    for i in range(max_retries):
+        try:
+            if predicate():
+                return True
+            print(f"Retrying reload library... attempt {i + 1}/{max_retries}")
+            reload_library()
+        except:
+            pass
+        time.sleep(sleep_time)
+        sleep_time = sleep_time * sleep_time_multiplier
+    return False
+
+
+def save_settings(settings: Settings):
+    url = f"{Config.PocketBase.url}/api/collections/yt_sync_settings/records"
+    response = get_db_session().get(url)
+    key2id = {entry['key']: entry['id'] for entry in response.json()['items']}
+    for key, entry_id in key2id.items():
+        val = getattr(settings, key)
+        resp = get_db_session().patch(f"{url}/{entry_id}", json={"val": val})
+        resp.raise_for_status()
+    load_settings.cache_clear()

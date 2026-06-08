@@ -3,7 +3,9 @@ import json
 import os
 import random
 import re
+import time
 from dataclasses import replace
+from os.path import basename
 from typing import List
 
 import yt_dlp
@@ -16,7 +18,7 @@ from utils.db import load_media_mappings, load_settings, load_playlist_configs, 
     add_local_media, load_yt_automated_playbooks, load_yt_media_metadata, YtMediaMetadata, save_yt_media_metadata, load_guser_by_id, create_yt_media_metadata, DownloadTask, create_download_task, \
     CreateOpResult, load_download_tasks, save_entity
 from utils.jf import load_all_items, find_user_by_name, load_item_by_id, save_item, load_jf_playlist, \
-    add_media_ids_to_playlist, create_playlist, get_jf_base_url
+    add_media_ids_to_playlist, create_playlist, get_jf_base_url, reload_library
 from utils.logs import create_logger
 from utils.slack import add_slack_interactive_message_handler, add_slack_shortcut_handler, send_ephemeral
 from utils.ytm import load_flat_playlist, createYtMusic, refresh_access_token, Category
@@ -111,43 +113,44 @@ add_slack_shortcut_handler("vsd-resolve-videos", process_init_video_resolve)
 
 def update_yt_ids_in_db():
     logger = create_logger("yt_ids_sync")
-    mappings = load_media_mappings()
+    download_tasks = load_download_tasks('downloaded')
     jf_items = load_all_items("Audio", "Path,ProviderIds")
     settings = load_settings()
     user = find_user_by_name(settings.jf_user_name)
     successful = []
     already_done = []
     failed = []
-    for m in mappings:
+    for dt in download_tasks:
         try:
-            jf_path = re.sub(settings.pf2jf_path_conv_search, settings.pf2jf_path_conv_replace, m.local_path)
-            jf_item = next((i for i in jf_items if i['Path'] == jf_path), None)
+            filename = basename(dt.path)
+            jf_item = next((i for i in jf_items if basename(i['Path']) == filename), None)
             if jf_item:
                 jf_id = jf_item['Id']
                 jf_name = jf_item['Name']
                 yt_provider_id = jf_item['ProviderIds'].get('YT')
                 if yt_provider_id is None:
                     jf_item_full = load_item_by_id(jf_id, user.id)
-                    jf_item_full['ProviderIds']['YT'] = m.yt_id
+                    jf_item_full['ProviderIds']['YT'] = dt.yt_id
                     if save_item(jf_item_full):
-                        logger.info(f"Media '{jf_name}'({jf_id}) got updated with YT id {m.yt_id}")
+                        logger.info(f"Media '{jf_name}'({jf_id}) got updated with YT id {dt.yt_id}")
                         successful.append(jf_item)
-                        # delete_mapping(m)
+                        dt.status = 'imported'
+                        save_entity(dt, ['status'])
                     else:
-                        logger.error(f"Failed to update media '{jf_name}'({jf_id}) with YT id {m.yt_id}")
+                        logger.error(f"Failed to update media '{jf_name}'({jf_id}) with YT id {dt.yt_id}")
                         failed.append(jf_item)
                 else:
                     logger.info(f"Media '{jf_name}'({jf_id}) already has YT id {yt_provider_id}")
                     already_done.append(jf_item)
             else:
-                logger.warn(f"Cannot find JellyFin Item for path [{jf_path}]")
-                failed.append({'Id': None, 'Name': None, 'Path': jf_path})
+                logger.warn(f"Cannot find JellyFin Item for path [{dt.path}]")
+                failed.append({'Id': None, 'Name': None, 'Path': dt.path})
         except:
-            logger.exception(f"Failed to process mapping {m}")
-            failed.append({'Id': None, 'Name': None, 'Path': m.local_path})
+            logger.exception(f"Failed to process download task {dt}")
+            failed.append({'Id': None, 'Name': None, 'Path': dt.path})
 
     log_level_function = logger.info if len(failed) == 0 else logger.warning
-    log_level_function(f"""Processed: {len(mappings)}.
+    log_level_function(f"""Processed: {len(download_tasks)}.
 Successfully updated items: {len(successful)}.
 Already contained yt_id: {len(already_done)}.
 Failed: {len(failed)}.""")
@@ -613,7 +616,7 @@ def process_download_tasks():
     pending_tasks = {t.yt_id: t for t in load_download_tasks() if t.status == 'pending'}
 
     def progress_hook(song):
-        logger.info(f"Download progress for {song['filename']}: {song['status']}")
+        logger.info(str(time.time()) + f" Download progress for {song['filename']}: {song['status']}")
         if song['status'] == 'finished':
             yt_id = song['info_dict']['id']
             file_path = song['filename']
@@ -624,7 +627,7 @@ def process_download_tasks():
 
     ydl_opts = {
         'progress_hooks': [progress_hook],
-        'format': 'bestaudio/best',
+        'format': 'bestaudio[ext=m4a]/best',
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
@@ -633,5 +636,9 @@ def process_download_tasks():
         for task in pending_tasks.values():
             try:
                 ydl.download([f"https://www.youtube.com/watch?v={task.yt_id}"])
+                logger.info(str(time.time()) + " Returned from download call for yt_id {task.yt_id} with status {task.status} and path {task.path}")
             except:
                 logger.exception(f"Failed to download yt_id {task.yt_id} for task {task.id}")
+    logger.info(str(time.time()) + " Finished processing download tasks")
+    reload_library()
+

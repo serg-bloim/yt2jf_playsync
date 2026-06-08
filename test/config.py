@@ -22,6 +22,12 @@ class Config:
         image = 'linuxserver/jellyfin:10.11.8'
         container_name = 'playsync_jellyfin_test'
         username = 'test'
+        music_lib_dir = '/data/music'
+
+    class TestData:
+        sample_media = root_dir() / 'test/media/sample.m4a'
+        download_mount_dir = root_dir() / 'test/media/dwld'
+        download_dir = download_mount_dir / 'test' # We need another level of dir so the test can safely delete it without disturbing docker
 
     class TestUser:
         jf_username = 'test'
@@ -55,4 +61,4 @@ def update_envvar():
     os.environ['DEFAULT_JF_USER_NAME'] = 'test'
 
     os.environ['JELLYFIN_LOCAL_URL'] = Config.JellyFin.url
-    os.environ['CONFIG_YTD_ROOT_DIR'] = '/tmp/test_ytdl'
+    os.environ['CONFIG_YTD_ROOT_DIR'] = str(Config.TestData.download_dir)

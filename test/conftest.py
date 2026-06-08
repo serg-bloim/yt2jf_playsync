@@ -1,20 +1,24 @@
+import os
+import shutil
 from contextlib import contextmanager
+from pathlib import Path
 from time import sleep
 
 import docker
 import pytest
 import requests
 import waiting
+from docker.types import Mount
 
 from test.config import Config
-from test.helpers import populate_db, get_test_user_session, requests_retry_session, setup_jf_library
+from test.helpers import populate_db, get_test_user_session, requests_retry_session, setup_jf_library, truncate
 from utils import db
-from utils.db import get_db_session
+from utils.db import get_db_session, DownloadTask
 from utils.jf import get_current_user
 
 
 @contextmanager
-def managed_container(docker_client, image, container_name, ports=None, express_mode=False):
+def managed_container(docker_client, image, container_name, ports=None, mounts=None, express_mode=False):
     old_container = next((c for c in docker_client.containers.list(all=True) if c.name == container_name), None)
     if express_mode and old_container and old_container.status == 'running':
         print(f"{container_name} is already running in express mode")
@@ -26,7 +30,8 @@ def managed_container(docker_client, image, container_name, ports=None, express_
         container = docker_client.containers.run(image,
                                                  name=container_name,
                                                  detach=True,
-                                                 ports=ports)
+                                                 ports=ports,
+                                                 mounts=mounts)
     try:
         yield container
     finally:
@@ -76,15 +81,23 @@ def docker_pocketbase(docker_client):
 
 @pytest.fixture(scope='session')
 def docker_jf(docker_client):
+    dwld_dir = str(Config.TestData.download_mount_dir)
+    os.makedirs(dwld_dir, exist_ok=True)
     with managed_container(docker_client,
                            Config.JellyFin.image,
                            Config.JellyFin.container_name,
                            ports={'8096/tcp': int(Config.JellyFin.port)},
-                           express_mode=Config.express_mode) as db:
+                           mounts=[Mount(
+                                 target='/data/music/dwld',
+                                 source=dwld_dir,
+                                 type='bind',
+                                 read_only=False
+                           )],
+                           express_mode=Config.express_mode) as jf:
         def predicate():
             requests.get(f"{Config.JellyFin.url}/health").raise_for_status()
             return True
-
+        jf.exec_run(f"mkdir -p {Config.JellyFin.music_lib_dir}")
         sleep(1)
         waiting.wait(predicate,
                      expected_exceptions=(requests.exceptions.ConnectionError, requests.exceptions.HTTPError),
@@ -105,7 +118,7 @@ def docker_jf(docker_client):
             requests.post(f"{Config.JellyFin.url}/Startup/Complete").raise_for_status()
             setup_jf_library()
 
-        yield db
+        yield jf
 
 @pytest.fixture(scope='session')
 def jf_session(docker_jf):
@@ -120,3 +133,8 @@ def jf_user(jf_session):
 def local_infra(docker_pocketbase, docker_jf):
     return (docker_pocketbase, docker_jf)
 
+@pytest.fixture
+def no_downloads():
+    truncate(DownloadTask)
+    dwld_dir = Path(os.environ['CONFIG_YTD_ROOT_DIR'])
+    shutil.rmtree(dwld_dir, ignore_errors=True)

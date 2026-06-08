@@ -1,9 +1,9 @@
 import requests
 
 from test.config import Config
-from test.helpers import get_test_user_session
-from utils.db import get_db_session
-from utils.jf import create_playlist, load_all_playlists
+from test.helpers import get_test_user_session, save_settings
+from utils.db import get_db_session, load_settings
+from utils.jf import create_playlist, load_all_playlists, reload_library
 from utils.ytm import load_flat_playlist
 
 
@@ -34,9 +34,26 @@ def test_jf_playlist_operations(jf_user):
 
     assert any(pl for pl in jf_playlists if pl['Name'] == 'regression_basic_1'), "Failed to find created JF playlist"
 
+def test_jf_lib_refresh(jf_session):
+    """Can create, update and delete a JF playlist."""
+    reload_library()
+
 
 def test_yt_read_playlist_flat():
     """Can read YT playlist without loading entries."""
     pl = load_flat_playlist(Config.Playlists.yt_src_id, load_entries=False)
     assert pl is not None, "Failed to load YT playlist"
     assert pl['title'] == 'test_1', f"Unexpected playlist title: {pl['title']}"
+
+def test_update_settings():
+    """Can update settings in the database."""
+    settings = load_settings()
+    settings.wait_time = '5m'
+    save_settings(settings)
+    settings_upd = load_settings()
+    assert settings_upd.wait_time == '5m', "Failed to update settings in the database"
+
+    settings.wait_time = '10m'
+    save_settings(settings)
+    settings_upd = load_settings()
+    assert settings_upd.wait_time == '10m', "Failed to update settings in the database"

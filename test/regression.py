@@ -3,10 +3,11 @@ from types import SimpleNamespace
 import pytest
 
 from sync import update_pl_cfg_in_db, sync_playlist, process_download_tasks
-from test.helpers import insert, truncate, find_jf_playlist_by_name, remove_jf_playlist, refresh_jf_library, copy_single_file_into_docker_container, delete, \
-    jf_has_song_with_yt_id
+from test.config import Config
+from test.helpers import insert, truncate, find_jf_playlist_by_name, remove_jf_playlist, copy_single_file_into_docker_container, delete, \
+    jf_has_song_with_yt_id, reload_lib_until_song_found_n_times
 from utils.db import PlaylistConfigResp, load_playlist_configs, load_download_tasks, DownloadTask
-from utils.jf import load_jf_playlist, create_playlist, find_user_by_name, add_media_ids_to_playlist, load_all_items, load_item_by_id, save_item
+from utils.jf import load_jf_playlist, create_playlist, find_user_by_name, add_media_ids_to_playlist, load_all_items, load_item_by_id, save_item, reload_library
 from utils.ytm import load_flat_playlist
 
 
@@ -84,10 +85,10 @@ def test_sync_yt_into_jf_playlist(local_infra, jf_session, pl_sync_cfg_1, jf_use
     assert dl_tasks[0].yt_id == missing_yt_ids[0], "The download task should be for the song that was not in the JF library"
     pass
 
-def test_download_single_song(jf_session):
+def test_download_single_song(jf_session, local_infra, no_downloads):
     """Test downloading a single song from YT"""
-    truncate(DownloadTask)
     yt_id = "HzvDofigTKQ"
+    assert reload_lib_until_song_found_n_times(yt_id, n=0)
     insert(DownloadTask(yt_id=yt_id))
     assert False == jf_has_song_with_yt_id(yt_id), "The song should not be in the library before download"
     process_download_tasks()
@@ -95,7 +96,7 @@ def test_download_single_song(jf_session):
     assert len(dl_tasks) == 1, "There should be 1 download task in the database"
     assert dl_tasks[0].status == "downloaded", "The download task should be marked as downloaded after processing"
     assert dl_tasks[0].path is not None, "The download task should have a file path after processing"
-    assert True == jf_has_song_with_yt_id(yt_id), "The song should not be in the library before download"
+    assert reload_lib_until_song_found_n_times(yt_id, n=1), "The song should be in the library after download"
     # Assert file size is as expected
     # Remove the file after the test
 
@@ -105,11 +106,12 @@ def pl_sync_cfg_1(docker_jf, jf_user):
     song_ids = [song['id'] for song in load_flat_playlist(yt_pl_sync_1.id)['entries']]
     assert len(song_ids) == 3, "YT playlist should have 3 songs for the test"
     pl_id = create_playlist('test_sync_1', jf_user.id, type="Audio")
+    truncate(PlaylistConfigResp)
     try:
         imported_yt_songs = song_ids[:2]
         for sid in imported_yt_songs:
-            copy_single_file_into_docker_container(docker_jf, f"/tmp/ytid_{sid}.m4a", "/Users/sbilon426/personal/projects/yt2jf_playsync/test/media/sample.m4a")
-        refresh_jf_library()
+            copy_single_file_into_docker_container(docker_jf, f"{Config.JellyFin.music_lib_dir}/ytid_{sid}_ytid.m4a", Config.TestData.sample_media)
+        reload_library()
         jf_songs = load_all_items("Audio", "Path,ProviderIds")
         for sid in imported_yt_songs:
             jf_id = next((s['Id'] for s in jf_songs if sid in s['Path']), None)
