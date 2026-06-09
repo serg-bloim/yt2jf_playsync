@@ -612,7 +612,7 @@ def sub_videos_with_songs():
 def process_download_tasks():
     logger = create_logger("yt_dwld")
     root_dir = os.environ.get('CONFIG_YTD_ROOT_DIR', "/tmp/ytdl")
-    output_template = os.path.join(root_dir, "ytm_%(id)s_ytm.%(ext)s")
+    output_template = os.path.join(root_dir, os.environ.get('CONFIG_YTD_FILEPATH_TEMPLATE', "ytm_%(id)s_ytm.%(ext)s"))
     pending_tasks = {t.yt_id: t for t in load_download_tasks() if t.status == 'pending'}
 
     def progress_hook(song):
