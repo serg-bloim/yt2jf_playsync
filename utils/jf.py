@@ -29,6 +29,8 @@ def get_user_session(username, password):
     logger.error(f"Cannot create a user session for '{username}', status: {auth_resp.status_code}")
     auth_resp.raise_for_status()
 
+def jf_auth():
+    __session__.headers.update({"X-Emby-Token": os.getenv('JELLYFIN_APIKEY')})
 
 def get_jf_base_url():
     return __jf_external_url__
