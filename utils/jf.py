@@ -159,7 +159,9 @@ def reload_library():
     __session__.post(f"{__jf_url__}/Library/Refresh")
     for vf in load_all_virtual_folders():
         try:
-            refresh_virtual_folder(vf['ItemId'])
-            logger.info(f"Virtual folder {vf['Name']} ({vf['ItemId']}) refreshed successfully")
+            if refresh_virtual_folder(vf['ItemId']):
+                logger.info(f"Virtual folder {vf['Name']} ({vf['ItemId']}) refreshed successfully")
+            else:
+                logger.warning(f"Failed to refresh virtual folder '{vf['Name']}' ({vf['ItemId']})")
         except:
             logger.warning(f"Cannot refresh virtual folder '{vf['Name']}' ({vf['ItemId']})")

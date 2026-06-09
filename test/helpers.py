@@ -168,7 +168,7 @@ def jf_has_song_with_yt_id(yt_id):
     return next((s for s in itms if yt_id in s['Path']), None) is not None
 
 
-def retry_on_exception(func, retries=6, delay=1, backoff=2):
+def retry_on_exception(func, retries=7, delay=1, backoff=2):
     for i in range(retries - 1):
         try:
             return func()
@@ -207,3 +207,9 @@ def save_settings(settings: Settings):
         resp = get_db_session().patch(f"{url}/{entry_id}", json={"val": val})
         resp.raise_for_status()
     load_settings.cache_clear()
+
+def get_yt_id(jf_item):
+    try:
+        return jf_item['ProviderIds']['YT']
+    except:
+        return None

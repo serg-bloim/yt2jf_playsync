@@ -10,6 +10,7 @@ import requests
 import waiting
 from docker.types import Mount
 
+import main
 from test.config import Config
 from test.helpers import populate_db, get_test_user_session, requests_retry_session, setup_jf_library, truncate
 from utils import db
@@ -138,3 +139,7 @@ def no_downloads():
     truncate(DownloadTask)
     dwld_dir = Path(os.environ['CONFIG_YTD_ROOT_DIR'])
     shutil.rmtree(dwld_dir, ignore_errors=True)
+
+@pytest.fixture
+def ffmpeg():
+    main.install_ffmpeg()

@@ -5,7 +5,7 @@ import pytest
 from sync import update_pl_cfg_in_db, sync_playlist, process_download_tasks
 from test.config import Config
 from test.helpers import insert, truncate, find_jf_playlist_by_name, remove_jf_playlist, copy_single_file_into_docker_container, delete, \
-    jf_has_song_with_yt_id, reload_lib_until_song_found_n_times
+    jf_has_song_with_yt_id, reload_lib_until_song_found_n_times, retry_on_exception
 from utils.db import PlaylistConfigResp, load_playlist_configs, load_download_tasks, DownloadTask
 from utils.jf import load_jf_playlist, create_playlist, find_user_by_name, add_media_ids_to_playlist, load_all_items, load_item_by_id, save_item, reload_library
 from utils.ytm import load_flat_playlist
@@ -85,7 +85,7 @@ def test_sync_yt_into_jf_playlist(local_infra, jf_session, pl_sync_cfg_1, jf_use
     assert dl_tasks[0].yt_id == missing_yt_ids[0], "The download task should be for the song that was not in the JF library"
     pass
 
-def test_download_single_song(jf_session, local_infra, no_downloads):
+def test_download_single_song(jf_session, local_infra, no_downloads, ffmpeg):
     """Test downloading a single song from YT"""
     yt_id = "HzvDofigTKQ"
     assert reload_lib_until_song_found_n_times(yt_id, n=0)
@@ -111,14 +111,18 @@ def pl_sync_cfg_1(docker_jf, jf_user):
         imported_yt_songs = song_ids[:2]
         for sid in imported_yt_songs:
             copy_single_file_into_docker_container(docker_jf, f"{Config.JellyFin.music_lib_dir}/ytid_{sid}_ytid.m4a", Config.TestData.sample_media)
-        reload_library()
-        jf_songs = load_all_items("Audio", "Path,ProviderIds")
-        for sid in imported_yt_songs:
-            jf_id = next((s['Id'] for s in jf_songs if sid in s['Path']), None)
-            if jf_id:
+
+        def checks():
+            reload_library()
+            jf_songs = load_all_items("Audio", "Path")
+            for sid in imported_yt_songs:
+                jf_id = next((s['Id'] for s in jf_songs if sid in s['Path']), None)
+                assert jf_id is not None, f"Song with YT id {sid} should be found in JF library after reload"
                 jf_item_full = load_item_by_id(jf_id, jf_user.id)
                 jf_item_full['ProviderIds']['YT'] = sid
                 assert save_item(jf_item_full), f"Failed to update JF item with YT id {sid}"
+        retry_on_exception(checks)
+        jf_songs = load_all_items("Audio", "Path")
         frst_id = next((s['Id'] for s in jf_songs if song_ids[0] in s['Path']), None)
         add_media_ids_to_playlist(pl_id, [frst_id], jf_user.id)
         pl_cfg = PlaylistConfigResp(id=None,

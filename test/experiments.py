@@ -1,9 +1,12 @@
 import os
+import time
 import unittest
 
 import docker
+import yt_dlp
 
 import sync
+from main import install_ffmpeg
 from sync import sub_videos_with_songs, resolve_video_substitution
 from test.helpers import copy_files_into_docker_container
 from utils import db, jf
@@ -103,5 +106,31 @@ class MyTestCase(unittest.TestCase):
         copy_files_into_docker_container(container, "/tmp/", "/Users/sbilon426/personal/projects/yt2jf_playsync/test/media/sample.m4a")
         pass
 
+    def test_download(self):
+        print("Testing download of a single song with yt-dlp")
+        install_ffmpeg()
+        yt_id = "4D7u5KF7SP8"
+        root_dir = os.environ.get('CONFIG_YTD_ROOT_DIR', "/tmp/ytdl")
+        output_template = os.path.join(root_dir, "ytm_%(id)s_ytm.%(ext)s")
+
+        ydl_opts = {
+            'format': 'bestaudio[ext=m4a]',
+            'outtmpl': output_template,
+            # 'quiet': True,
+            'ffmpeg_location': '/Users/sbilon426/personal/projects/yt2jf_playsync/.venv/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffmpeg',
+            'writethumbnail': True,
+            # 'no_warnings': True,
+            # 'addmetadata': True,
+
+            # Embed the video thumbnail as cover art
+            # 'embedthumbnail': True,
+            'postprocessors': [
+                {'key': 'FFmpegMetadata', 'add_metadata': True, },
+                {'key': 'EmbedThumbnail', 'already_have_thumbnail': False, }]
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"https://www.youtube.com/watch?v={yt_id}"])
+
 if __name__ == '__main__':
-    unittest.main()
+    MyTestCase().test_download()
+    # unittest.main()

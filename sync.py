@@ -627,18 +627,21 @@ def process_download_tasks():
 
     ydl_opts = {
         'progress_hooks': [progress_hook],
-        'format': 'bestaudio[ext=m4a]/best',
+        'format': 'bestaudio[ext=m4a]',
         'outtmpl': output_template,
         'quiet': True,
-        'no_warnings': True,
+        # Embed the song thumbnail as cover art
+        'writethumbnail': True,
+        'postprocessors': [
+            {'key': 'FFmpegMetadata', 'add_metadata': True, },
+            {'key': 'EmbedThumbnail', 'already_have_thumbnail': True, }]
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         for task in pending_tasks.values():
             try:
                 ydl.download([f"https://www.youtube.com/watch?v={task.yt_id}"])
-                logger.info(str(time.time()) + " Returned from download call for yt_id {task.yt_id} with status {task.status} and path {task.path}")
+                logger.info(str(time.time()) + f" Returned from download call for yt_id {task.yt_id} with status {task.status} and path {task.path}")
             except:
                 logger.exception(f"Failed to download yt_id {task.yt_id} for task {task.id}")
     logger.info(str(time.time()) + " Finished processing download tasks")
     reload_library()
-

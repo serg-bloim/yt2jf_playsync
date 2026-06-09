@@ -34,9 +34,15 @@ def setup_db_structure():
     create_db_structure()
 
 
+def install_ffmpeg():
+    import static_ffmpeg
+    static_ffmpeg.add_paths()
+
+
 def main():
     try:
-        logger.info(f"Version: {read_version()}")
+        logger.warning(f"Version: {read_version()}")
+        install_ffmpeg()
         setup_db_structure()
         logger.info(f"Starting the sync.")
         update_pl_cfg_in_db()

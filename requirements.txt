@@ -8,3 +8,4 @@ ytmusicapi==1.11.5
 docker==7.1.0
 pytest==9.0.3
 waiting==1.5.0
+static-ffmpeg==3.0

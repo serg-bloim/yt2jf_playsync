@@ -1,5 +1,8 @@
+import os
+
 import requests
 
+from main import install_ffmpeg
 from test.config import Config
 from test.helpers import get_test_user_session, save_settings
 from utils.db import get_db_session, load_settings
@@ -57,3 +60,9 @@ def test_update_settings():
     save_settings(settings)
     settings_upd = load_settings()
     assert settings_upd.wait_time == '10m', "Failed to update settings in the database"
+
+def test_ffmpeg():
+    install_ffmpeg()
+    status = os.system("ffmpeg --help")
+    print(f"ffmpeg status: {status}")
+    assert status == 0
