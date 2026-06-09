@@ -4,6 +4,7 @@ import os
 import random
 import re
 import time
+from collections import defaultdict
 from dataclasses import replace
 from os.path import basename
 from typing import List
@@ -291,6 +292,7 @@ def sync_playlist(pl_config, user=None, items=None, logger=None):
     recovery_media_mismatch = []
     not_in_lib = []
     for yt_song in yt_playlist_songs['entries']:
+        yt_song = defaultdict(lambda x:"UNKNOWN", yt_song)
         yt_id = yt_song['id']
         if yt_id in jf_playlist_yt_ids:
             # This song is already in the JF playlist
