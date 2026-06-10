@@ -4,6 +4,7 @@ import unittest
 
 import docker
 import yt_dlp
+from yt_dlp import MetadataParserPP
 
 import sync
 from main import install_ffmpeg
@@ -126,7 +127,12 @@ class MyTestCase(unittest.TestCase):
             # 'embedthumbnail': True,
             'postprocessors': [
                 {'key': 'FFmpegMetadata', 'add_metadata': True, },
-                {'key': 'EmbedThumbnail', 'already_have_thumbnail': False, }]
+                {'key': 'EmbedThumbnail', 'already_have_thumbnail': False, },
+                {
+                    'key': 'MetadataParser',
+                    'when': 'pre_process',
+                    'actions': [(MetadataParserPP.Actions.INTERPRET, r'%(upload_date>%Y-%m-%d)s', r'(?P<meta_date>.+)')]
+                }]
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([f"https://www.youtube.com/watch?v={yt_id}"])

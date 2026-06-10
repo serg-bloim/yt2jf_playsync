@@ -11,6 +11,7 @@ from typing import List
 
 import yt_dlp
 from slack_sdk.socket_mode.request import SocketModeRequest
+from yt_dlp import MetadataParserPP
 from ytmusicapi import YTMusic
 
 from utils import slack
@@ -636,7 +637,13 @@ def process_download_tasks():
         'writethumbnail': True,
         'postprocessors': [
             {'key': 'FFmpegMetadata', 'add_metadata': True, },
-            {'key': 'EmbedThumbnail', 'already_have_thumbnail': True, }]
+            {'key': 'EmbedThumbnail', 'already_have_thumbnail': False, },
+            { # Older versions of Jellyfin failed to parse date in yyyymmdd format and require it in yyyy-mm-dd
+                'key': 'MetadataParser',
+                'when': 'pre_process',
+                'actions': [(MetadataParserPP.Actions.INTERPRET, r'%(upload_date>%Y-%m-%d)s', r'(?P<meta_date>.+)')]
+            }
+        ]
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         for task in pending_tasks.values():
