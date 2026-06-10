@@ -51,7 +51,9 @@ def main():
         update_yt_ids_in_db()
         sub_videos_with_songs()
         sync_all_playlists()
-        process_download_tasks()
+        if process_download_tasks() > 0:
+            update_yt_ids_in_db()
+            sync_all_playlists()
     except:
         logger.exception("Error during the main cycle")
         with io.StringIO() as output:

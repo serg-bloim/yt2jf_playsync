@@ -645,12 +645,16 @@ def process_download_tasks():
             }
         ]
     }
+    downloaded = 0
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         for task in pending_tasks.values():
             try:
-                ydl.download([f"https://www.youtube.com/watch?v={task.yt_id}"])
+                if 0 != (retcode := ydl.download([f"https://www.youtube.com/watch?v={task.yt_id}"])):
+                    raise Exception(f"yt-dlp returned non successful code: {retcode}")
+                downloaded += 1
                 logger.info(str(time.time()) + f" Returned from download call for yt_id {task.yt_id} with status {task.status} and path {task.path}")
             except:
                 logger.exception(f"Failed to download yt_id {task.yt_id} for task {task.id}")
     logger.info(str(time.time()) + " Finished processing download tasks")
     reload_library()
+    return downloaded

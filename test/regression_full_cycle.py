@@ -26,34 +26,18 @@ def test_main(local_infra, jf_user, pl_sync_cfg_1, no_wait, no_downloads):
 
     main()
 
-    abc = pl_sync_cfg_1
-    def checks1():
+    def checks2():
         reload_library()
-        jf_playlist_songs = load_jf_playlist(abc.jf_pl_id, jf_user.id, "ProviderIds")['Items']
-        assert len(jf_playlist_songs) == 2, "After sync, there should be 2 songs in the JF playlist (the 1 that was already there + the 1 new one that was in the library)"
-        assert set(get_yt_id(s) for s in jf_playlist_songs) == set(abc.situation.jf_lib_song_ids), "Only the songs that are in the JF library should be in the playlist after sync"
+        assert len(load_all_items("Audio", "Path")) == 3, "After processing the download task, there should be 3 songs in the JF library"
+        jf_playlist_songs = load_jf_playlist(pl_sync_cfg_1.jf_pl_id, jf_user.id, "ProviderIds")['Items']
+        assert len(jf_playlist_songs) == 3, "After sync, there should be 3 songs in the JF playlist (the 1 that was already there + the 1 new one that was in the library + the 1 that was downloaded in the previous step)"
         dl_tasks = load_download_tasks()
-        missing_yt_ids = list(set(abc.situation.yt_pl_song_ids) - set(abc.situation.jf_lib_song_ids))
+        missing_yt_ids = list(set(pl_sync_cfg_1.situation.yt_pl_song_ids) - set(pl_sync_cfg_1.situation.jf_lib_song_ids))
         assert len(missing_yt_ids) == 1, "There should be exactly 1 song missing from the JF library for the test scenario to be valid"
         assert len(dl_tasks) == 1, "There should be 1 download task created for the song that was not in the JF library"
         assert dl_tasks[0].yt_id == missing_yt_ids[0], "The download task should be for the song that was not in the JF library"
-        assert dl_tasks[0].status == 'downloaded', "The download task should be marked as downloaded after processing"
-        assert len(load_all_items("Audio", "Path")) == 3, "After processing the download task, there should be 3 songs in the JF library"
-        assert jf_has_song_with_yt_id(dl_tasks[0].yt_id)
-
-    try:
-        retry_on_exception(checks1)
-    except:
-        raise
-
-    main()
-
-    def checks2():
-        reload_library()
-        jf_playlist_songs = load_jf_playlist(pl_sync_cfg_1.jf_pl_id, jf_user.id, "ProviderIds")['Items']
-        assert len(jf_playlist_songs) == 3, "After sync, there should be 3 songs in the JF playlist (the 1 that was already there + the 1 new one that was in the library + the 1 that was downloaded in the previous step)"
+        assert dl_tasks[0].status == 'imported', "The download task should be marked as imported after processing"
     retry_on_exception(checks2)
-    pass
 
 @pytest.fixture
 def no_wait():
