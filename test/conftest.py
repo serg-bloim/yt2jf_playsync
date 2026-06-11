@@ -123,7 +123,10 @@ def docker_jf(docker_client):
 
 @pytest.fixture(scope='session')
 def jf_session(docker_jf):
-    return get_test_user_session()
+    session = get_test_user_session()
+    apikey = session.headers['X-Emby-Token']
+    os.environ['JELLYFIN_APIKEY'] = apikey
+    return session
 
 
 @pytest.fixture(scope='session')
