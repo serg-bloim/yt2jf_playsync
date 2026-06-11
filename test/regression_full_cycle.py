@@ -21,8 +21,11 @@ def test_main(local_infra, jf_user, pl_sync_cfg_1, no_wait, no_downloads):
         - The 1 song not in the JF library at all is returned as not_found (i.e. queued for download)
     """
     print(pl_sync_cfg_1.jf_pl_id)
-    assert len(load_all_items("Audio", "Path")) == 2, "Before sync, there should be 2 songs in the JF library"
-    assert len(load_jf_playlist(pl_sync_cfg_1.jf_pl_id, jf_user.id, "ProviderIds")['Items']) == 1, "Before sync, only 1 song should be in the JF playlist"
+    def prechecks():
+        reload_library()
+        assert len(load_all_items("Audio", "Path")) == 2, "Before sync, there should be 2 songs in the JF library"
+        assert len(load_jf_playlist(pl_sync_cfg_1.jf_pl_id, jf_user.id, "ProviderIds")['Items']) == 1, "Before sync, only 1 song should be in the JF playlist"
+    retry_on_exception(prechecks)
 
     main()
 
