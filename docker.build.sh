@@ -1,5 +1,5 @@
 img=yt2jf_playsync
-tag=SNAPSHOT
+tag=0.9.1-rc1
 tag_latest=true
 full_img=$img:$tag
 code_verison=$(git rev-parse HEAD)
