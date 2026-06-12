@@ -288,7 +288,7 @@ def sync_playlist(pl_config, user=None, items=None, logger=None):
     user = user or find_user_by_name(load_settings().jf_user_name)
     yt_playlist_songs = load_flat_playlist(pl_config.ytm_pl_id)
     jf_playlist_songs = load_jf_playlist(pl_config.jf_pl_id, user.id, "ProviderIds")
-    jf_playlist_yt_ids = {e['ProviderIds']['YT'] for e in jf_playlist_songs['Items']}
+    jf_playlist_yt_ids = { e['ProviderIds']['YT'] for e in jf_playlist_songs['Items'] if 'YT' in e['ProviderIds']}
     already_in_library = []
     recovery_media_mismatch = []
     not_in_lib = []
